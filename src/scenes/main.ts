@@ -2,6 +2,16 @@ import "phaser";
 
 export default class MainScene extends Phaser.Scene {
   private map!: Phaser.Tilemaps.Tilemap;
+  private player!: Phaser.Types.Physics.Arcade.SpriteWithDynamicBody;
+  private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
+  private wasd!: {
+    W: Phaser.Input.Keyboard.Key;
+    A: Phaser.Input.Keyboard.Key;
+    S: Phaser.Input.Keyboard.Key;
+    D: Phaser.Input.Keyboard.Key;
+  };
+  private playerSpeed: number = 150;
+  private currentAnimation: string = 'idle-down';
 
   constructor() {
     super("main");
@@ -82,6 +92,43 @@ export default class MainScene extends Phaser.Scene {
       "Shadows",
       "Pixel Crawler - Free Pack/Environment/Props/Static/Shadows.png"
     );
+
+    this.load.spritesheet('idle-down', 
+      'Pixel Crawler - Free Pack/Entities/Characters/Body_A/Animations/Idle_Base/Idle_Down-Sheet.png',
+      { frameWidth: 16, frameHeight: 16 }
+    );
+    this.load.spritesheet('idle-up', 
+      'Pixel Crawler - Free Pack/Entities/Characters/Body_A/Animations/Idle_Base/Idle_Up-Sheet.png',
+      { frameWidth: 16, frameHeight: 16 }
+    );
+    this.load.spritesheet('idle-side', 
+      'Pixel Crawler - Free Pack/Entities/Characters/Body_A/Animations/Idle_Base/Idle_Side-Sheet.png',
+      { frameWidth: 16, frameHeight: 16 }
+    );
+    this.load.spritesheet('run-down', 
+      'Pixel Crawler - Free Pack/Entities/Characters/Body_A/Animations/Run_Base/Run_Down-Sheet.png',
+      { frameWidth: 16, frameHeight: 16 }
+    );
+    this.load.spritesheet('run-up', 
+      'Pixel Crawler - Free Pack/Entities/Characters/Body_A/Animations/Run_Base/Run_Up-Sheet.png',
+      { frameWidth: 16, frameHeight: 16 }
+    );
+    this.load.spritesheet('run-side', 
+      'Pixel Crawler - Free Pack/Entities/Characters/Body_A/Animations/Run_Base/Run_Side-Sheet.png',
+      { frameWidth: 16, frameHeight: 16 }
+    );
+    this.load.spritesheet('walk-down', 
+      'Pixel Crawler - Free Pack/Entities/Characters/Body_A/Animations/Walk_Base/Walk_Down-Sheet.png',
+      { frameWidth: 16, frameHeight: 16 }
+    );
+    this.load.spritesheet('walk-up', 
+      'Pixel Crawler - Free Pack/Entities/Characters/Body_A/Animations/Walk_Base/Walk_Up-Sheet.png',
+      { frameWidth: 16, frameHeight: 16 }
+    );
+    this.load.spritesheet('walk-side', 
+      'Pixel Crawler - Free Pack/Entities/Characters/Body_A/Animations/Walk_Base/Walk_Side-Sheet.png',
+      { frameWidth: 16, frameHeight: 16 }
+    );
   }
 
   create() {
@@ -145,17 +192,25 @@ export default class MainScene extends Phaser.Scene {
       }
     }
 
-    // Add a camera controller
-    const cursors = this.input.keyboard?.createCursorKeys();
-    const controlConfig = {
-      camera: this.cameras.main,
-      left: cursors?.left,
-      right: cursors?.right,
-      up: cursors?.up,
-      down: cursors?.down,
-      acceleration: 0.06,
-      drag: 0.0005,
-      maxSpeed: 1.0,
+    // Create character animations
+    this.createAnimations();
+
+    // Create player sprite
+    this.player = this.physics.add.sprite(
+      this.map.widthInPixels / 2,
+      this.map.heightInPixels / 2,
+      'idle-down'
+    );
+    this.player.setCollideWorldBounds(true);
+    this.player.setSize(10, 10); // Adjust hitbox size
+    this.player.setOffset(3, 6); // Adjust hitbox position
+
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.wasd = {
+      W: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
+      A: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A),
+      S: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S),
+      D: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D)
     };
 
     this.cameras.main.setBounds(
@@ -164,15 +219,8 @@ export default class MainScene extends Phaser.Scene {
       this.map.widthInPixels,
       this.map.heightInPixels
     );
+    this.cameras.main.startFollow(this.player);
     this.cameras.main.setZoom(3); // Adjust zoom for better viewing
-
-    // Add camera controls
-    const controls = new Phaser.Cameras.Controls.SmoothedKeyControl(
-      controlConfig
-    );
-
-    // Store controls in scene for update loop
-    (this as any).controls = controls;
 
     // Add debug information
     console.log(`Map dimensions: ${this.map.width}x${this.map.height}`);
@@ -183,14 +231,116 @@ export default class MainScene extends Phaser.Scene {
     console.log(
       `Loaded tilesets: ${tilesets.length}/${this.map.tilesets.length}`
     );
-    console.log("Use arrow keys to navigate the map");
+    console.log("Use arrow keys or WASD to move the character");
   }
 
-  update(_: number, delta: number) {
-    // Update camera controls
-    const controls = (this as any).controls;
-    if (controls) {
-      controls.update(delta);
+  createAnimations() {
+    this.anims.create({
+      key: 'idle-down',
+      frames: this.anims.generateFrameNumbers('idle-down', { start: 0, end: 3 }),
+      frameRate: 6,
+      repeat: -1
+    });
+    this.anims.create({
+      key: 'idle-up',
+      frames: this.anims.generateFrameNumbers('idle-up', { start: 0, end: 3 }),
+      frameRate: 6,
+      repeat: -1
+    });
+    this.anims.create({
+      key: 'idle-side',
+      frames: this.anims.generateFrameNumbers('idle-side', { start: 0, end: 3 }),
+      frameRate: 6,
+      repeat: -1
+    });
+    
+    this.anims.create({
+      key: 'run-down',
+      frames: this.anims.generateFrameNumbers('run-down', { start: 0, end: 5 }),
+      frameRate: 10,
+      repeat: -1
+    });
+    this.anims.create({
+      key: 'run-up',
+      frames: this.anims.generateFrameNumbers('run-up', { start: 0, end: 5 }),
+      frameRate: 10,
+      repeat: -1
+    });
+    this.anims.create({
+      key: 'run-side',
+      frames: this.anims.generateFrameNumbers('run-side', { start: 0, end: 5 }),
+      frameRate: 10,
+      repeat: -1
+    });
+    
+    this.anims.create({
+      key: 'walk-down',
+      frames: this.anims.generateFrameNumbers('walk-down', { start: 0, end: 5 }),
+      frameRate: 8,
+      repeat: -1
+    });
+    this.anims.create({
+      key: 'walk-up',
+      frames: this.anims.generateFrameNumbers('walk-up', { start: 0, end: 5 }),
+      frameRate: 8,
+      repeat: -1
+    });
+    this.anims.create({
+      key: 'walk-side',
+      frames: this.anims.generateFrameNumbers('walk-side', { start: 0, end: 5 }),
+      frameRate: 8,
+      repeat: -1
+    });
+  }
+
+  update(_: number, _delta: number) {
+    if (!this.player) return;
+
+    this.player.setVelocity(0);
+
+    const left = this.cursors.left.isDown || this.wasd.A.isDown;
+    const right = this.cursors.right.isDown || this.wasd.D.isDown;
+    const up = this.cursors.up.isDown || this.wasd.W.isDown;
+    const down = this.cursors.down.isDown || this.wasd.S.isDown;
+    const shift = this.cursors.shift.isDown;
+
+    const speed = shift ? this.playerSpeed * 1.5 : this.playerSpeed;
+    const moveType = shift ? 'run' : 'walk';
+
+    if (left) {
+      this.player.setVelocityX(-speed);
+      this.player.setFlipX(true);
+      this.player.anims.play(`${moveType}-side`, true);
+      this.currentAnimation = `${moveType}-side`;
+    } else if (right) {
+      this.player.setVelocityX(speed);
+      this.player.setFlipX(false);
+      this.player.anims.play(`${moveType}-side`, true);
+      this.currentAnimation = `${moveType}-side`;
+    }
+
+    if (up) {
+      this.player.setVelocityY(-speed);
+      if (!left && !right) {
+        this.player.anims.play(`${moveType}-up`, true);
+        this.currentAnimation = `${moveType}-up`;
+      }
+    } else if (down) {
+      this.player.setVelocityY(speed);
+      if (!left && !right) {
+        this.player.anims.play(`${moveType}-down`, true);
+        this.currentAnimation = `${moveType}-down`;
+      }
+    }
+
+    if (!left && !right && !up && !down) {
+      if (this.currentAnimation.includes('side')) {
+        this.player.anims.play('idle-side', true);
+      } else if (this.currentAnimation.includes('up')) {
+        this.player.anims.play('idle-up', true);
+      } else {
+        this.player.anims.play('idle-down', true);
+      }
     }
   }
 }
