@@ -186,7 +186,7 @@ export default class MainScene extends Phaser.Scene {
     console.log("Use arrow keys to navigate the map");
   }
 
-  update(time: number, delta: number) {
+  update(_: number, delta: number) {
     // Update camera controls
     const controls = (this as any).controls;
     if (controls) {
