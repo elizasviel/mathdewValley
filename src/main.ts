@@ -3,7 +3,7 @@ import MainScene from "./scenes/main";
 
 const config = {
   type: Phaser.AUTO,
-  backgroundColor: "#18647c", // Ocean blue background
+  backgroundColor: "#18647c", // Deep ocean blue background
   scale: {
     parent: "game",
     mode: Phaser.Scale.FIT,
