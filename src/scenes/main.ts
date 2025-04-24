@@ -417,7 +417,9 @@ export default class MainScene extends Phaser.Scene {
           console.log(`Successfully created layer: ${layer.name}`);
 
           // Set depth based on layer name or index
-          if (layer.name.includes("-1")) {
+          if (layer.name.includes("-2")) {
+            createdLayer.setDepth(-2); //underground
+          } else if (layer.name.includes("-1")) {
             createdLayer.setDepth(-1); //underground
           } else if (layer.name.includes("0")) {
             createdLayer.setDepth(0); // Default for other layers, including 0
@@ -968,6 +970,7 @@ export default class MainScene extends Phaser.Scene {
       "Tile Layer 4",
       "Tile Layer 5",
       "Tile Layer -1",
+      "Tile Layer -2",
     ];
 
     for (const coord of adjacentCoords) {
@@ -1065,6 +1068,7 @@ export default class MainScene extends Phaser.Scene {
       "Tile Layer 4",
       "Tile Layer 5",
       "Tile Layer -1",
+      "Tile Layer -2",
     ];
     let foundAdjacentWater = false;
     for (const coord of adjacentCoords) {
@@ -2087,6 +2091,7 @@ export default class MainScene extends Phaser.Scene {
       "Tile Layer 4",
       "Tile Layer 5",
       "Tile Layer -1",
+      "Tile Layer -2",
     ];
 
     // 1. Find all connected stump tiles
