@@ -80,80 +80,45 @@ export default class MainScene extends Phaser.Scene {
   preload() {
     this.load.tilemapTiledJSON("map", "mapCopy.tmj");
 
-    this.load.image(
-      "Dungeon_Tiles",
-      "Pixel Crawler - Free Pack/Environment/Tilesets/Dungeon_Tiles.png"
-    );
-    this.load.image(
-      "Floors_Tiles",
-      "Pixel Crawler - Free Pack/Environment/Tilesets/Floors_Tiles.png"
-    );
-    this.load.image(
-      "Wall_Tiles",
-      "Pixel Crawler - Free Pack/Environment/Tilesets/Wall_Tiles.png"
-    );
-    this.load.image(
-      "Wall_Variations",
-      "Pixel Crawler - Free Pack/Environment/Tilesets/Wall_Variations.png"
-    );
-    this.load.image(
-      "Water_tiles",
-      "Pixel Crawler - Free Pack/Environment/Tilesets/Water_tiles.png"
-    );
+    // Group images by path prefix
+    const imageSets = {
+      "Pixel Crawler - Free Pack/Environment/Tilesets/": [
+        "Dungeon_Tiles",
+        "Floors_Tiles",
+        "Wall_Tiles",
+        "Wall_Variations",
+        "Water_tiles",
+      ],
+      "Pixel Crawler - Free Pack/Environment/Props/Static/": [
+        "Vegetation",
+        "Furniture",
+        "Rocks",
+        "Shadows",
+      ],
+      "Pixel Crawler - Free Pack/Environment/Structures/Buildings/": [
+        "Props",
+        "Roofs",
+        "Walls",
+        "Shadows1",
+      ],
+      "Pixel Crawler - Free Pack/Environment/Props/Static/Trees/Model_01/": [
+        "Size_02",
+        "Size_03",
+        "Size_04",
+        "Size_05",
+      ],
+      "Pixel Crawler - Free Pack/Environment/Structures/Stations/Sawmill/": [
+        "Level_1",
+      ],
+    };
 
-    this.load.image(
-      "Vegetation",
-      "Pixel Crawler - Free Pack/Environment/Props/Static/Vegetation.png"
-    );
-    this.load.image(
-      "Props",
-      "Pixel Crawler - Free Pack/Environment/Structures/Buildings/Props.png"
-    );
-    this.load.image(
-      "Roofs",
-      "Pixel Crawler - Free Pack/Environment/Structures/Buildings/Roofs.png"
-    );
-    this.load.image(
-      "Walls",
-      "Pixel Crawler - Free Pack/Environment/Structures/Buildings/Walls.png"
-    );
-    this.load.image(
-      "Size_02",
-      "Pixel Crawler - Free Pack/Environment/Props/Static/Trees/Model_01/Size_02.png"
-    );
-    this.load.image(
-      "Size_03",
-      "Pixel Crawler - Free Pack/Environment/Props/Static/Trees/Model_01/Size_03.png"
-    );
-    this.load.image(
-      "Size_04",
-      "Pixel Crawler - Free Pack/Environment/Props/Static/Trees/Model_01/Size_04.png"
-    );
-    this.load.image(
-      "Size_05",
-      "Pixel Crawler - Free Pack/Environment/Props/Static/Trees/Model_01/Size_05.png"
-    );
-    this.load.image(
-      "Furniture",
-      "Pixel Crawler - Free Pack/Environment/Props/Static/Furniture.png"
-    );
-    this.load.image(
-      "Rocks",
-      "Pixel Crawler - Free Pack/Environment/Props/Static/Rocks.png"
-    );
-    this.load.image(
-      "Shadows",
-      "Pixel Crawler - Free Pack/Environment/Props/Static/Shadows.png"
-    );
-    this.load.image(
-      "Shadows1",
-      "Pixel Crawler - Free Pack/Environment/Structures/Buildings/Shadows1.png"
-    );
-    this.load.image(
-      "Level_1",
-      "Pixel Crawler - Free Pack/Environment/Structures/Stations/Sawmill/Level_1.png"
-    );
+    for (const pathPrefix in imageSets) {
+      imageSets[pathPrefix as keyof typeof imageSets].forEach((name) => {
+        this.load.image(name, `${pathPrefix}${name}.png`);
+      });
+    }
 
+    // Load spritesheets with specific configurations
     this.load.spritesheet(
       "Farm",
       "Pixel Crawler - Free Pack/Environment/Props/Static/Farm.png",
@@ -170,6 +135,7 @@ export default class MainScene extends Phaser.Scene {
       { frameWidth: 112, frameHeight: 80 }
     );
 
+    // Load animation spritesheets
     const frameConfig = { frameWidth: 64, frameHeight: 64 };
     const animPrefixes = [
       "idle",
@@ -191,11 +157,12 @@ export default class MainScene extends Phaser.Scene {
     animPrefixes.forEach((prefix) => {
       animDirections.forEach((dir) => {
         const key = `${prefix}_${dir}`;
-        let pathSuffix =
-          dir === "up" && prefix === "pierce"
-            ? "Top"
-            : dir.charAt(0).toUpperCase() + dir.slice(1);
-        if (dir === "side" && prefix === "pierce") pathSuffix = "Side";
+        // Simplified path suffix logic (assuming consistent naming)
+        const pathSuffix =
+          dir === "side" ? "Side" : dir.charAt(0).toUpperCase() + dir.slice(1);
+        const specialPierceUp = prefix === "pierce" && dir === "up";
+        const actualSuffix = specialPierceUp ? "Top" : pathSuffix;
+
         const isCarryAnim = prefix.startsWith("carry");
         const baseFolderName =
           prefix
@@ -206,7 +173,8 @@ export default class MainScene extends Phaser.Scene {
           .replace(/_/g, " ")
           .replace(/\b\w/g, (l) => l.toUpperCase())
           .replace(/ /g, "_");
-        const fullPath = `Animations/${baseFolderName}/${filenamePrefix}_${pathSuffix}-Sheet.png`;
+
+        const fullPath = `Animations/${baseFolderName}/${filenamePrefix}_${actualSuffix}-Sheet.png`;
         this.load.spritesheet(key, fullPath, frameConfig);
       });
     });
@@ -233,7 +201,6 @@ export default class MainScene extends Phaser.Scene {
       );
       if (tileset) {
         tilesets.push(tileset);
-        console.log(`Successfully loaded tileset: ${mapTileset.name}`);
       } else {
         console.error(`Failed to load tileset: ${mapTileset.name}`);
       }
@@ -252,10 +219,8 @@ export default class MainScene extends Phaser.Scene {
       "5": 5,
     };
 
-    console.log("Creating layers:");
     this.map.layers.forEach((layerData) => {
       try {
-        console.log(`Attempting to create layer: ${layerData.name}`);
         const createdLayer = this.map.createLayer(
           layerData.name,
           tilesets,
@@ -263,10 +228,6 @@ export default class MainScene extends Phaser.Scene {
           0
         );
         if (createdLayer) {
-          console.log(
-            `Successfully created layer: ${layerData.name}, Visible (from Tiled): ${layerData.visible}`
-          );
-
           // Set depth based on name suffix - Default to 0 if no match
           let depthSet = false;
           for (const suffix in layerDepthMap) {
@@ -276,23 +237,16 @@ export default class MainScene extends Phaser.Scene {
               layerData.name === `Tile Layer ${suffix}`
             ) {
               createdLayer.setDepth(layerDepthMap[suffix]);
-              console.log(
-                ` -> Set depth to ${layerDepthMap[suffix]} based on suffix '${suffix}'`
-              );
               depthSet = true;
               break;
             }
           }
           if (!depthSet) {
             createdLayer.setDepth(0); // Default depth if no suffix matches
-            console.log(
-              ` -> No matching suffix found, set depth to 0 (default)`
-            );
           }
 
           // Explicitly set visibility based on Tiled data
           createdLayer.setVisible(layerData.visible);
-          console.log(` -> Set visibility to ${layerData.visible}`);
         } else {
           console.error(`Failed to create layer object: ${layerData.name}`);
         }
@@ -329,54 +283,35 @@ export default class MainScene extends Phaser.Scene {
     const runFrameRate = this.baseFrameRate * 1.5;
     const actionFrameRate = this.actionFrameRate;
 
-    this.createAnimation("idle_down", "idle_down", 3, idleFrameRate);
-    this.createAnimation("idle_up", "idle_up", 3, idleFrameRate);
-    this.createAnimation("idle_side", "idle_side", 3, idleFrameRate);
+    // Define common animation types
+    const standardAnimTypes = {
+      idle: { endFrame: 3, frameRate: idleFrameRate, repeat: -1 },
+      walk: { endFrame: 5, frameRate: walkFrameRate, repeat: -1 },
+      run: { endFrame: 5, frameRate: runFrameRate, repeat: -1 },
+      hit: { endFrame: 3, frameRate: actionFrameRate, repeat: 0 },
+      carry_idle: { endFrame: 3, frameRate: idleFrameRate, repeat: -1 },
+      carry_walk: { endFrame: 5, frameRate: walkFrameRate, repeat: -1 },
+      carry_run: { endFrame: 5, frameRate: runFrameRate, repeat: -1 },
+    };
 
-    this.createAnimation("walk_down", "walk_down", 5, walkFrameRate);
-    this.createAnimation("walk_up", "walk_up", 5, walkFrameRate);
-    this.createAnimation("walk_side", "walk_side", 5, walkFrameRate);
+    const directions = ["down", "up", "side"];
 
-    this.createAnimation("run_down", "run_down", 5, runFrameRate);
-    this.createAnimation("run_up", "run_up", 5, runFrameRate);
-    this.createAnimation("run_side", "run_side", 5, runFrameRate);
+    for (const prefix in standardAnimTypes) {
+      const config =
+        standardAnimTypes[prefix as keyof typeof standardAnimTypes];
+      directions.forEach((dir) => {
+        const key = `${prefix}_${dir}`;
+        this.createAnimation(
+          key,
+          key,
+          config.endFrame,
+          config.frameRate,
+          config.repeat
+        );
+      });
+    }
 
-    this.createAnimation("hit_down", "hit_down", 3, actionFrameRate, 0);
-    this.createAnimation("hit_up", "hit_up", 3, actionFrameRate, 0);
-    this.createAnimation("hit_side", "hit_side", 3, actionFrameRate, 0);
-
-    this.createAnimation(
-      "carry_idle_down",
-      "carry_idle_down",
-      3,
-      idleFrameRate
-    );
-    this.createAnimation("carry_idle_up", "carry_idle_up", 3, idleFrameRate);
-    this.createAnimation(
-      "carry_idle_side",
-      "carry_idle_side",
-      3,
-      idleFrameRate
-    );
-
-    this.createAnimation(
-      "carry_walk_down",
-      "carry_walk_down",
-      5,
-      walkFrameRate
-    );
-    this.createAnimation("carry_walk_up", "carry_walk_up", 5, walkFrameRate);
-    this.createAnimation(
-      "carry_walk_side",
-      "carry_walk_side",
-      5,
-      walkFrameRate
-    );
-
-    this.createAnimation("carry_run_down", "carry_run_down", 5, runFrameRate);
-    this.createAnimation("carry_run_up", "carry_run_up", 5, runFrameRate);
-    this.createAnimation("carry_run_side", "carry_run_side", 5, runFrameRate);
-
+    // Define action animations
     const actionAnims = [
       "collect",
       "crush",
@@ -386,27 +321,10 @@ export default class MainScene extends Phaser.Scene {
       "fishing",
     ];
     actionAnims.forEach((prefix) => {
-      this.createAnimation(
-        `${prefix}_down`,
-        `${prefix}_down`,
-        7,
-        actionFrameRate,
-        0
-      );
-      this.createAnimation(
-        `${prefix}_up`,
-        `${prefix}_up`,
-        7,
-        actionFrameRate,
-        0
-      );
-      this.createAnimation(
-        `${prefix}_side`,
-        `${prefix}_side`,
-        7,
-        actionFrameRate,
-        0
-      );
+      directions.forEach((dir) => {
+        const key = `${prefix}_${dir}`;
+        this.createAnimation(key, key, 7, actionFrameRate, 0);
+      });
     });
 
     this.player.on(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
@@ -451,7 +369,6 @@ export default class MainScene extends Phaser.Scene {
     const grassLayer = this.map.getLayer("Tile Layer 0")?.tilemapLayer;
     if (grassLayer) {
       this.grassLayer = grassLayer;
-      console.log("Grass layer 'Tile Layer 0' initialized.");
     } else {
       console.error(
         "Failed to find 'Tile Layer 0'. Grass/Soil logic might fail."
@@ -461,7 +378,6 @@ export default class MainScene extends Phaser.Scene {
     const soilLayer = this.map.getLayer("Tile Layer 1")?.tilemapLayer;
     if (soilLayer) {
       this.soilLayer = soilLayer;
-      console.log("Soil layer 'Tile Layer 1' initialized.");
     } else {
       console.warn(
         "Could not find 'Tile Layer 1'. Creating a blank one for soil."
@@ -475,7 +391,6 @@ export default class MainScene extends Phaser.Scene {
       if (newSoilLayer) {
         this.soilLayer = newSoilLayer;
         this.soilLayer.setDepth(1);
-        console.log("Created a blank 'Tile Layer 1' for soil.");
       } else {
         console.error(
           "Failed to create even a blank 'Tile Layer 1'. Soil placement will fail."
@@ -957,7 +872,6 @@ export default class MainScene extends Phaser.Scene {
     );
 
     if (!canPlaceTile1 || !canPlaceTile2) {
-      console.log("Cannot place item here: Location blocked or invalid.");
       return;
     }
 
@@ -1005,9 +919,22 @@ export default class MainScene extends Phaser.Scene {
       return false;
     }
 
-    const worldX = this.map.tileToWorldX(tileX) + this.map.tileWidth / 2;
-    const worldY = this.map.tileToWorldY(tileY) + this.map.tileHeight / 2;
-    if (this.hasCollisionAtWorldXY(worldX, worldY)) {
+    const worldX = this.map.tileToWorldX(tileX);
+    const worldY = this.map.tileToWorldY(tileY);
+
+    // Check if conversion resulted in null (e.g., tile coords invalid)
+    if (worldX === null || worldY === null) {
+      console.warn(
+        `Cannot check collision for placement: Invalid world coordinates for tile ${tileX}, ${tileY}`
+      );
+      return false;
+    }
+
+    // Adjust to check center of the tile
+    const checkWorldX = worldX + this.map.tileWidth / 2;
+    const checkWorldY = worldY + this.map.tileHeight / 2;
+
+    if (this.hasCollisionAtWorldXY(checkWorldX, checkWorldY)) {
       return false;
     }
 
@@ -1493,10 +1420,6 @@ export default class MainScene extends Phaser.Scene {
       if (!stump.properties) stump.properties = {};
       stump.properties.cut = true;
     });
-
-    console.log(
-      `Tree cut: Removed ${allTreeTiles.length} tree tiles, marked ${stumpTiles.length} stumps.`
-    );
   }
 
   private canPlaceSoil(targetX: number, targetY: number): boolean {
@@ -1515,8 +1438,9 @@ export default class MainScene extends Phaser.Scene {
       }
     }
 
-    const worldX = this.map.tileToWorldX(targetX) + this.map.tileWidth / 2;
-    const worldY = this.map.tileToWorldY(targetY) + this.map.tileHeight / 2;
+    const worldX = this.map.tileToWorldX(targetX);
+    const worldY = this.map.tileToWorldY(targetY);
+
     if (worldX === null || worldY === null) {
       console.warn(
         `Cannot check collision for soil placement: Invalid world coordinates for tile ${targetX}, ${targetY}`
@@ -1524,7 +1448,11 @@ export default class MainScene extends Phaser.Scene {
       return false;
     }
 
-    if (this.hasCollisionAtWorldXY(worldX, worldY)) {
+    // Adjust to check center of the tile
+    const checkWorldX = worldX + this.map.tileWidth / 2;
+    const checkWorldY = worldY + this.map.tileHeight / 2;
+
+    if (this.hasCollisionAtWorldXY(checkWorldX, checkWorldY)) {
       return false;
     }
 
@@ -1550,10 +1478,6 @@ export default class MainScene extends Phaser.Scene {
       } else {
         if (!newTile.properties) newTile.properties = {};
       }
-      console.log(
-        `Placed soil at ${targetX}, ${targetY}. Properties:`,
-        newTile.properties
-      );
 
       if (newTile.properties?.emptyPlot === true) {
         this.addGlowEffect(newTile);
