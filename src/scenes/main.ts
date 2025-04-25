@@ -37,6 +37,27 @@ export default class MainScene extends Phaser.Scene {
 
   // --- Autotiling ---
   private grassLayer!: Phaser.Tilemaps.TilemapLayer; // Added for grass autotiling
+  private soilLayer!: Phaser.Tilemaps.TilemapLayer; // Added for soil
+
+  // Soil tile IDs
+  private SOIL_BASE = 148;
+  private SOIL_BORDER_UP = 123;
+  private SOIL_BORDER_DOWN = 173;
+  private SOIL_BORDER_LEFT = 147;
+  private SOIL_BORDER_RIGHT = 149;
+  // New Combination Borders
+  private SOIL_LR = 164; // Left + Right
+  private SOIL_UD = 165; // Up + Down
+  private SOIL_LRD = 189; // Left + Right + Down
+  private SOIL_UDL = 190; // Up + Down + Left
+  private SOIL_LRU = 214; // Left + Right + Up
+  private SOIL_UDR = 215; // Up + Down + Right
+  private SOIL_ALL = 239; // All 4 sides
+  // Inner Corner Borders (Placed on the non-soil tile adjacent to the corner)
+  private SOIL_CORNER_UL = 264; // Soil is Up & Left of this tile
+  private SOIL_CORNER_UR = 265; // Soil is Up & Right of this tile
+  private SOIL_CORNER_DL = 266; // Soil is Down & Left of this tile
+  private SOIL_CORNER_DR = 267; // Soil is Down & Right of this tile
 
   constructor() {
     super("main");
@@ -350,7 +371,7 @@ export default class MainScene extends Phaser.Scene {
       frameConfig
     );
 
-    // Fishing (8 frames)
+    // Fishing (8 frames, no repeat)
     this.load.spritesheet(
       "fishing_down",
       "Animations/Fishing_Base/Fishing_Down-Sheet.png",
@@ -729,6 +750,31 @@ export default class MainScene extends Phaser.Scene {
       console.log("Grass layer 'Tile Layer 0' initialized.");
     } else {
       console.error("Failed to find 'Tile Layer 0'. Autotiling will not work.");
+    }
+
+    // --- Initialize Soil Layer ---
+    const layer1 = this.map.getLayer("Tile Layer 1")?.tilemapLayer;
+    if (layer1) {
+      this.soilLayer = layer1;
+      console.log("Soil layer 'Tile Layer 1' initialized.");
+    } else {
+      console.warn(
+        "Could not find 'Tile Layer 1'. Soil placement might not work."
+      );
+      // Create a dummy layer if it doesn't exist to prevent errors, though placement won't be visible
+      // You might want to ensure 'Tile Layer 1' exists in your Tiled map.
+      this.soilLayer = this.map.createBlankLayer(
+        "Tile Layer 1",
+        tilesets,
+        0,
+        0
+      );
+      if (this.soilLayer) {
+        this.soilLayer.setDepth(1); // Match expected depth
+        console.log("Created a blank 'Tile Layer 1' for soil.");
+      } else {
+        console.error("Failed to create even a blank 'Tile Layer 1'.");
+      }
     }
 
     // --- Input Setup ---
@@ -1160,9 +1206,34 @@ export default class MainScene extends Phaser.Scene {
       return; // Crush action handled
     }
 
-    // --- 7. No Action Found ---
+    // --- 7. Check for Soil Placement ---
+    // Use player's tile coordinates, similar to grass crushing
+    // const pointerTileX = this.map.worldToTileX(this.input.activePointer.worldX);
+    // const pointerTileY = this.map.worldToTileY(this.input.activePointer.worldY);
+
+    // Check if soil can be placed at the player's current location
+    if (this.canPlaceSoil(playerTileX, playerTileY)) {
+      console.log(
+        `Placing soil at player location [${playerTileX}, ${playerTileY}]`
+      );
+      // Play Crush animation
+      const actionAnimPrefix = "crush";
+      const directionSuffix =
+        this.currentDir === "up" || this.currentDir === "down"
+          ? this.currentDir
+          : "side";
+      const actionAnimKey = `${actionAnimPrefix}_${directionSuffix}`;
+      const flipX = this.currentDir === "left";
+      this.player.setFlipX(flipX);
+      this.player.anims.play(actionAnimKey, true);
+
+      this.placeSoilTile(playerTileX, playerTileY);
+      return; // Soil placement handled
+    }
+
+    // --- 8. No Action Found ---
     console.log(
-      "No action found for click (No stump, fishing, pickup, or grass)."
+      "No action found for click (No stump, fishing, pickup, grass, or soil placement)."
     );
     // Example: Play 'hit' animation as feedback
     /* ... */
@@ -2219,4 +2290,195 @@ export default class MainScene extends Phaser.Scene {
   } // End of cutTree
 
   // --- END TREE CUTTING METHODS ---
+
+  // --- SOIL PLACEMENT METHODS ---
+
+  /**
+   * Checks if soil can be placed at the target coordinates.
+   * Requires the target tile on layer 0 (grassLayer) to be empty (revealed dirt)
+   * and all 8 surrounding tiles on layer 0 to also be empty.
+   */
+  private canPlaceSoil(targetX: number, targetY: number): boolean {
+    if (!this.grassLayer) return false; // Need the grass layer (layer 0)
+
+    // Check center tile
+    if (this.grassLayer.getTileAt(targetX, targetY) !== null) {
+      return false; // Center tile is not revealed dirt
+    }
+
+    // Check 8 neighbors
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        if (dx === 0 && dy === 0) continue; // Skip center
+        if (this.grassLayer.getTileAt(targetX + dx, targetY + dy) !== null) {
+          return false; // Neighbor is not revealed dirt
+        }
+      }
+    }
+
+    return true; // All conditions met
+  }
+
+  /**
+   * Places a soil tile at the target coordinates on layer 1 (soilLayer)
+   * and updates the borders of itself and its neighbors.
+   */
+  private placeSoilTile(targetX: number, targetY: number): void {
+    console.log("PLACING SOIL TILE");
+    if (!this.soilLayer) {
+      console.error("Cannot place soil, soil layer is not initialized.");
+      return;
+    }
+    const farmTileset = this.map.getTileset("Farm");
+    if (!farmTileset) {
+      console.error("Cannot place soil, 'Farm' tileset not found.");
+      return;
+    }
+
+    // Place the base soil tile (adjust index by firstgid)
+    const baseSoilIndex = this.SOIL_BASE + farmTileset.firstgid;
+    this.soilLayer.putTileAt(baseSoilIndex, targetX, targetY);
+
+    // Update borders for the new tile and its neighbors
+    this.updateAdjacentBorder(targetX, targetY);
+    this.updateAdjacentBorder(targetX, targetY - 1); // Above
+    this.updateAdjacentBorder(targetX, targetY + 1); // Below
+    this.updateAdjacentBorder(targetX - 1, targetY); // Left
+    this.updateAdjacentBorder(targetX + 1, targetY); // Right
+  }
+
+  /**
+   * Checks if a tile at given coordinates on the soil layer is a soil tile (base or border).
+   * Note: Compares against the base tile IDs (e.g., 148), not the final index + firstgid.
+   */
+  private isBaseSoil(tileX: number, tileY: number): boolean {
+    if (!this.soilLayer) return false;
+    const tile = this.soilLayer.getTileAt(tileX, tileY);
+    if (!tile || !tile.tileset) return false;
+
+    // We need to compare the tile's base index (index - firstgid)
+    // with our known soil IDs stored in the set.
+    const baseIndex = tile.index - tile.tileset.firstgid;
+    return baseIndex === this.SOIL_BASE;
+  }
+
+  /**
+   * Updates the border of a single tile at (x, y) on the soil layer
+   * based on whether its cardinal neighbors are also soil.
+   */
+  private updateAdjacentBorder(x: number, y: number): void {
+    // Ensure layers exist
+    if (!this.soilLayer || !this.grassLayer) {
+      // console.log(`Border check: [${x},${y}] skipped, layers missing.`);
+      return;
+    }
+
+    // 1. Check if the target tile (x, y) is suitable for placing a border.
+    //    - Must be empty on grassLayer (Layer 0).
+    //    - Must NOT be base soil on soilLayer (Layer 1).
+    if (this.grassLayer.getTileAt(x, y) !== null) {
+      // console.log(`Border check: [${x},${y}] skipped, grass layer not empty.`);
+      return; // Cannot place border on top of grass/other layer 0 stuff
+    }
+    if (this.isBaseSoil(x, y)) {
+      // console.log(`Border check: [${x},${y}] skipped, is already base soil.`);
+      return; // Don't overwrite base soil with a border
+    }
+
+    const farmTileset = this.map.getTileset("Farm");
+    if (!farmTileset) {
+      console.error("Cannot update border, 'Farm' tileset not found.");
+      return;
+    }
+    const firstgid = farmTileset.firstgid;
+
+    // 2. Check cardinal neighbors FOR BASE SOIL
+    const soilAbove = this.isBaseSoil(x, y - 1); // Is the tile ABOVE (x,y) base soil?
+    const soilBelow = this.isBaseSoil(x, y + 1); // Is the tile BELOW (x,y) base soil?
+    const soilLeft = this.isBaseSoil(x - 1, y); // Is the tile LEFT of (x,y) base soil?
+    const soilRight = this.isBaseSoil(x + 1, y); // Is the tile RIGHT of (x,y) base soil?
+
+    let borderBaseIndex: number | null = null; // Use null to indicate no border / remove tile
+
+    // 3. Determine which border tile to place AT (x,y) based on adjacent soil.
+    //    Check from most complex (4 neighbors) to least complex (1 neighbor).
+    if (soilAbove && soilBelow && soilLeft && soilRight) {
+      borderBaseIndex = this.SOIL_ALL; // All 4 sides
+    } else if (soilAbove && soilBelow && soilLeft) {
+      borderBaseIndex = this.SOIL_UDL; // Up + Down + Left
+    } else if (soilAbove && soilBelow && soilRight) {
+      borderBaseIndex = this.SOIL_UDR; // Up + Down + Right
+    } else if (soilLeft && soilRight && soilAbove) {
+      borderBaseIndex = this.SOIL_LRU; // Left + Right + Up
+    } else if (soilLeft && soilRight && soilBelow) {
+      borderBaseIndex = this.SOIL_LRD; // Left + Right + Down
+    } else if (soilAbove && soilBelow) {
+      borderBaseIndex = this.SOIL_UD; // Vertical Connector (Up + Down)
+    } else if (soilLeft && soilRight) {
+      borderBaseIndex = this.SOIL_LR; // Horizontal Connector (Left + Right)
+      // --- NEW: Check for Inner Corners ---
+    } else if (soilAbove && soilLeft) {
+      borderBaseIndex = this.SOIL_CORNER_UL; // Soil is Up & Left of this tile
+    } else if (soilAbove && soilRight) {
+      borderBaseIndex = this.SOIL_CORNER_UR; // Soil is Up & Right of this tile
+    } else if (soilBelow && soilLeft) {
+      borderBaseIndex = this.SOIL_CORNER_DL; // Soil is Down & Left of this tile
+    } else if (soilBelow && soilRight) {
+      borderBaseIndex = this.SOIL_CORNER_DR; // Soil is Down & Right of this tile
+      // --- End Inner Corner Check ---
+    } else if (soilBelow) {
+      // Placed UP border because soil is BELOW
+      borderBaseIndex = this.SOIL_BORDER_UP;
+    } else if (soilAbove) {
+      // Place DOWN border because soil is ABOVE
+      borderBaseIndex = this.SOIL_BORDER_DOWN;
+    } else if (soilRight) {
+      // Place LEFT border because soil is RIGHT
+      borderBaseIndex = this.SOIL_BORDER_LEFT;
+    } else if (soilLeft) {
+      // Place RIGHT border because soil is LEFT
+      borderBaseIndex = this.SOIL_BORDER_RIGHT;
+    }
+    // If none of the above conditions are met, borderBaseIndex remains null.
+
+    // 4. Place or remove the border tile on the soilLayer
+    if (borderBaseIndex !== null) {
+      // console.log(`Placing border ${borderBaseIndex} at [${x},${y}]`);
+      this.soilLayer.putTileAt(borderBaseIndex + firstgid, x, y);
+    } else {
+      // Only remove if it wasn't base soil (already checked above)
+      // Check if the current tile is *any* known border tile before removing.
+      const currentTile = this.soilLayer.getTileAt(x, y);
+      if (currentTile && currentTile.tileset) {
+        // Check tileset exists
+        const currentBaseIndex =
+          currentTile.index - currentTile.tileset.firstgid;
+        const isCurrentTileABorder = [
+          this.SOIL_BORDER_UP,
+          this.SOIL_BORDER_DOWN,
+          this.SOIL_BORDER_LEFT,
+          this.SOIL_BORDER_RIGHT,
+          this.SOIL_LR,
+          this.SOIL_UD,
+          this.SOIL_LRD,
+          this.SOIL_UDL,
+          this.SOIL_LRU,
+          this.SOIL_UDR,
+          this.SOIL_ALL,
+          // Add new corners to the check list
+          this.SOIL_CORNER_UL,
+          this.SOIL_CORNER_UR,
+          this.SOIL_CORNER_DL,
+          this.SOIL_CORNER_DR,
+        ].includes(currentBaseIndex);
+
+        if (isCurrentTileABorder) {
+          // console.log(`Removing border at [${x},${y}]`);
+          this.soilLayer.removeTileAt(x, y); // Remove if no adjacent soil and it *was* a border
+        }
+      }
+    }
+  }
+
+  // --- GRASS AUTOTILING METHODS ---
 } // End of MainScene class
