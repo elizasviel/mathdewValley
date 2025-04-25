@@ -62,6 +62,10 @@ export default class MainScene extends Phaser.Scene {
   private readonly SOIL_CORNER_DL = 266;
   private readonly SOIL_CORNER_DR = 267;
 
+  // Offset constants for carried item positioning relative to the player
+  private readonly PLAYER_CARRY_OFFSET_X = 0;
+  private readonly PLAYER_CARRY_OFFSET_Y = -24;
+
   private readonly COLLISION_CHECK_LAYERS = [
     "Tile Layer -2",
     "Tile Layer -1",
@@ -228,25 +232,14 @@ export default class MainScene extends Phaser.Scene {
           0
         );
         if (createdLayer) {
-          // Set depth based on name suffix - Default to 0 if no match
-          let depthSet = false;
-          for (const suffix in layerDepthMap) {
-            // Check if name *ends with* the suffix (e.g., "Tile Layer 0", "Objects 5")
-            if (
-              layerData.name.endsWith(` ${suffix}`) ||
-              layerData.name === `Tile Layer ${suffix}`
-            ) {
-              createdLayer.setDepth(layerDepthMap[suffix]);
-              depthSet = true;
-              break;
-            }
-          }
-          if (!depthSet) {
-            createdLayer.setDepth(0); // Default depth if no suffix matches
-          }
+          // Extract potential depth suffix (e.g., " 0", " -1", " 5")
+          const nameParts = layerData.name.split(" ");
+          const suffix = nameParts[nameParts.length - 1];
+          // Use suffix to find depth, default to 0 if not found or not a number
+          const depth = layerDepthMap[suffix] ?? 0;
 
-          // Explicitly set visibility based on Tiled data
-          createdLayer.setVisible(layerData.visible);
+          createdLayer.setDepth(depth);
+          createdLayer.setVisible(layerData.visible); // Set visibility from Tiled
         } else {
           console.error(`Failed to create layer object: ${layerData.name}`);
         }
@@ -282,48 +275,51 @@ export default class MainScene extends Phaser.Scene {
     const walkFrameRate = this.baseFrameRate;
     const runFrameRate = this.baseFrameRate * 1.5;
     const actionFrameRate = this.actionFrameRate;
-
-    // Define common animation types
-    const standardAnimTypes = {
-      idle: { endFrame: 3, frameRate: idleFrameRate, repeat: -1 },
-      walk: { endFrame: 5, frameRate: walkFrameRate, repeat: -1 },
-      run: { endFrame: 5, frameRate: runFrameRate, repeat: -1 },
-      hit: { endFrame: 3, frameRate: actionFrameRate, repeat: 0 },
-      carry_idle: { endFrame: 3, frameRate: idleFrameRate, repeat: -1 },
-      carry_walk: { endFrame: 5, frameRate: walkFrameRate, repeat: -1 },
-      carry_run: { endFrame: 5, frameRate: runFrameRate, repeat: -1 },
-    };
-
     const directions = ["down", "up", "side"];
 
-    for (const prefix in standardAnimTypes) {
-      const config =
-        standardAnimTypes[prefix as keyof typeof standardAnimTypes];
+    const animations = [
+      // Standard Animations
+      { prefix: "idle", endFrame: 3, frameRate: idleFrameRate, repeat: -1 },
+      { prefix: "walk", endFrame: 5, frameRate: walkFrameRate, repeat: -1 },
+      { prefix: "run", endFrame: 5, frameRate: runFrameRate, repeat: -1 },
+      { prefix: "hit", endFrame: 3, frameRate: actionFrameRate, repeat: 0 },
+      {
+        prefix: "carry_idle",
+        endFrame: 3,
+        frameRate: idleFrameRate,
+        repeat: -1,
+      },
+      {
+        prefix: "carry_walk",
+        endFrame: 5,
+        frameRate: walkFrameRate,
+        repeat: -1,
+      },
+      { prefix: "carry_run", endFrame: 5, frameRate: runFrameRate, repeat: -1 },
+      // Action Animations
+      { prefix: "collect", endFrame: 7, frameRate: actionFrameRate, repeat: 0 },
+      { prefix: "crush", endFrame: 7, frameRate: actionFrameRate, repeat: 0 },
+      { prefix: "pierce", endFrame: 7, frameRate: actionFrameRate, repeat: 0 },
+      { prefix: "slice", endFrame: 7, frameRate: actionFrameRate, repeat: 0 },
+      {
+        prefix: "watering",
+        endFrame: 7,
+        frameRate: actionFrameRate,
+        repeat: 0,
+      },
+      { prefix: "fishing", endFrame: 7, frameRate: actionFrameRate, repeat: 0 },
+    ];
+
+    animations.forEach((anim) => {
       directions.forEach((dir) => {
-        const key = `${prefix}_${dir}`;
+        const key = `${anim.prefix}_${dir}`;
         this.createAnimation(
           key,
           key,
-          config.endFrame,
-          config.frameRate,
-          config.repeat
+          anim.endFrame,
+          anim.frameRate,
+          anim.repeat
         );
-      });
-    }
-
-    // Define action animations
-    const actionAnims = [
-      "collect",
-      "crush",
-      "pierce",
-      "slice",
-      "watering",
-      "fishing",
-    ];
-    actionAnims.forEach((prefix) => {
-      directions.forEach((dir) => {
-        const key = `${prefix}_${dir}`;
-        this.createAnimation(key, key, 7, actionFrameRate, 0);
       });
     });
 
@@ -414,15 +410,20 @@ export default class MainScene extends Phaser.Scene {
       return;
     }
 
-    const relOffsetX = this.carriedItemOriginalTile1.relativeOffsetX ?? 0;
-    const relOffsetY = this.carriedItemOriginalTile1.relativeOffsetY ?? -1;
-    const baseOffsetX = 0;
-    const baseOffsetY = -24;
+    // Use object destructuring with default values for relative offsets
+    const { relativeOffsetX = 0, relativeOffsetY = -1 } =
+      this.carriedItemOriginalTile1;
+
+    // Use defined constants for base offsets
+    const baseOffsetX = this.PLAYER_CARRY_OFFSET_X;
+    const baseOffsetY = this.PLAYER_CARRY_OFFSET_Y;
 
     const magnitude =
-      Math.sqrt(relOffsetX * relOffsetX + relOffsetY * relOffsetY) || 1;
-    const normX = relOffsetX / magnitude;
-    const normY = relOffsetY / magnitude;
+      Math.sqrt(
+        relativeOffsetX * relativeOffsetX + relativeOffsetY * relativeOffsetY
+      ) || 1;
+    const normX = relativeOffsetX / magnitude;
+    const normY = relativeOffsetY / magnitude;
 
     const worldOffsetX = normX * (this.map.tileWidth / 2);
     const worldOffsetY = normY * (this.map.tileHeight / 2);
@@ -502,47 +503,34 @@ export default class MainScene extends Phaser.Scene {
       return;
     }
 
-    const isMovingW = this.keys.W.isDown;
-    const isMovingA = this.keys.A.isDown;
-    const isMovingS = this.keys.S.isDown;
-    const isMovingD = this.keys.D.isDown;
-    const isRunning = this.keys.SHIFT.isDown;
-    const isActivelyMoving = isMovingW || isMovingA || isMovingS || isMovingD;
-
-    let newAnimKey = "";
-    let flipX = this.player.flipX;
+    // Use const for keys
+    const { W, A, S, D, SHIFT } = this.keys;
+    const isMoving = W.isDown || A.isDown || S.isDown || D.isDown;
+    const isRunning = SHIFT.isDown;
 
     const basePrefix = this.isCarrying ? "carry_" : "";
+    let statePrefix: string;
 
-    if (isActivelyMoving) {
-      const movePrefix = isRunning ? `${basePrefix}run_` : `${basePrefix}walk_`;
-      switch (this.currentDir) {
-        case "up":
-          newAnimKey = `${movePrefix}up`;
-          break;
-        case "down":
-          newAnimKey = `${movePrefix}down`;
-          break;
-        case "left":
-          newAnimKey = `${movePrefix}side`;
-          flipX = true;
-          break;
-        case "right":
-          newAnimKey = `${movePrefix}side`;
-          flipX = false;
-          break;
-      }
+    if (isMoving) {
+      statePrefix = isRunning ? `${basePrefix}run_` : `${basePrefix}walk_`;
     } else {
-      newAnimKey = this.getCurrentIdleAnimKey();
-      flipX = this.currentDir === "left";
+      statePrefix = this.isCarrying ? "carry_idle_" : "idle_";
     }
+
+    // Determine direction suffix and flip based on currentDir
+    const directionSuffix =
+      this.currentDir === "up" || this.currentDir === "down"
+        ? this.currentDir
+        : "side";
+    const flipX = this.currentDir === "left";
+    const newAnimKey = `${statePrefix}${directionSuffix}`;
 
     this.player.setFlipX(flipX);
 
+    // Play animation if it's different or not currently playing
     if (
-      newAnimKey &&
-      (this.player.anims.currentAnim?.key !== newAnimKey ||
-        !this.player.anims.isPlaying)
+      this.player.anims.currentAnim?.key !== newAnimKey ||
+      !this.player.anims.isPlaying
     ) {
       this.player.anims.play(newAnimKey, true);
     }
@@ -630,11 +618,19 @@ export default class MainScene extends Phaser.Scene {
     const { x: playerTileX, y: playerTileY } = this.getPlayerTileCoords();
     if (playerTileX === null || playerTileY === null) return;
 
-    if (this.tryStumpInteraction(playerTileX, playerTileY)) return;
-    if (this.tryWaterInteraction(playerTileX, playerTileY)) return;
-    if (this.tryPickupInteraction(playerTileX, playerTileY)) return;
-    if (this.tryGrassRemovalInteraction(playerTileX, playerTileY)) return;
-    if (this.trySoilPlacementInteraction(playerTileX, playerTileY)) return;
+    const interactionChecks = [
+      this.tryStumpInteraction,
+      this.tryWaterInteraction,
+      this.tryPickupInteraction,
+      this.tryGrassRemovalInteraction,
+      this.trySoilPlacementInteraction,
+    ];
+
+    for (const checkInteraction of interactionChecks) {
+      if (checkInteraction.call(this, playerTileX, playerTileY)) {
+        return;
+      }
+    }
   }
 
   private tryStumpInteraction(
@@ -838,23 +834,21 @@ export default class MainScene extends Phaser.Scene {
     let dropTileX1 = playerTileX;
     let dropTileY1 = playerTileY;
 
-    switch (this.currentDir) {
-      case "up":
-        dropTileY1--;
-        break;
-      case "down":
-        dropTileY1++;
-        break;
-      case "left":
-        dropTileX1--;
-        break;
-      case "right":
-        dropTileX1++;
-        break;
+    // Use a map for direction offsets
+    const directionOffsets: { [key: string]: { x: number; y: number } } = {
+      up: { x: 0, y: -1 },
+      down: { x: 0, y: 1 },
+      left: { x: -1, y: 0 },
+      right: { x: 1, y: 0 },
+    };
+    const offset = directionOffsets[this.currentDir];
+    if (offset) {
+      dropTileX1 += offset.x;
+      dropTileY1 += offset.y;
     }
 
     const relOffsetX = this.carriedItemOriginalTile1.relativeOffsetX ?? 0;
-    const relOffsetY = this.carriedItemOriginalTile1.relativeOffsetY ?? -1;
+    const relOffsetY = this.carriedItemOriginalTile1.relativeOffsetY ?? -1; // Default assumption if missing
     const dropTileX2 = dropTileX1 + relOffsetX;
     const dropTileY2 = dropTileY1 + relOffsetY;
 
@@ -984,260 +978,260 @@ export default class MainScene extends Phaser.Scene {
     if (isNeighborGrass(tileX - 1, tileY - 1)) mask |= 128;
 
     const tileIndexMap_8Way: { [key: number]: number | null } = {
-      255: 252,
-      254: 102,
-      251: 50,
-      239: 2,
-      191: 54,
-      248: 76,
-      247: 25,
-      225: 26,
-      223: 29,
-      15: 28,
-      127: 79,
-      60: 78,
-      253: 75,
-      112: 76,
-      193: 26,
-      7: 28,
-      28: 78,
-      231: 2,
-      207: 2,
-      252: 102,
-      126: 102,
-      199: 2,
-      124: 102,
-      243: 50,
-      159: 54,
-      249: 50,
-      63: 54,
-      241: 50,
-      31: 54,
-      238: 77,
-      187: 52,
-      62: 78,
-      120: 76,
-      195: 26,
-      143: 28,
-      227: 26,
-      240: 76,
-      30: 78,
-      135: 28,
-      250: 76,
-      175: 28,
-      235: 26,
-      75: 26,
-      190: 78,
-      242: 76,
-      47: 28,
-      188: 78,
-      158: 78,
-      156: 78,
-      233: 26,
-      122: 76,
-      210: 76,
-      107: 26,
-      182: 78,
-      180: 78,
-      203: 26,
-      167: 28,
-      39: 28,
-      114: 76,
-      128: 53,
-      130: 53,
-      170: 53,
-      2: 53,
-      40: 53,
-      160: 53,
-      10: 53,
-      8: 53,
-      32: 53,
-      119: 79,
-      221: 75,
-      215: 3,
-      125: 103,
-      236: 77,
-      230: 77,
-      228: 77,
-      179: 52,
-      42: 53,
-      155: 52,
-      110: 77,
-      206: 77,
-      70: 77,
-      68: 77,
-      78: 77,
-      76: 77,
-      116: 102,
-      69: 2,
-      77: 2,
-      196: 77,
-      81: 50,
-      83: 50,
-      86: 102,
-      84: 102,
-      92: 102,
-      102: 77,
-      192: 82,
-      53: 54,
-      21: 54,
-      237: 2,
-      103: 2,
-      229: 2,
-      197: 2,
-      101: 2,
-      205: 2,
-      89: 50,
-      246: 102,
-      212: 102,
-      118: 102,
-      218: 76,
-      173: 28,
-      71: 2,
-      245: 101,
-      213: 101,
-      95: 103,
-      117: 103,
-      85: 103,
-      99: 26,
-      65: 26,
-      67: 26,
-      97: 26,
-      105: 26,
-      133: 28,
-      208: 76,
-      37: 28,
-      5: 28,
-      88: 76,
-      80: 76,
-      52: 78,
-      20: 78,
-      220: 102,
-      204: 77,
-      198: 77,
-      108: 77,
-      100: 77,
-      162: 53,
-      168: 53,
-      34: 53,
-      138: 53,
-      59: 52,
-      211: 50,
-      151: 54,
-      61: 54,
-      23: 54,
-      27: 52,
-      121: 50,
-      147: 52,
-      25: 52,
-      17: 52,
-      57: 52,
-      29: 54,
-      177: 52,
-      113: 50,
-      49: 52,
-      145: 52,
-      185: 52,
-      189: 54,
-      183: 54,
-      149: 54,
-      91: 50,
-      19: 52,
-      222: 102,
-      111: 2,
-      214: 102,
-      109: 2,
-      136: 53,
-      56: 32,
-      16: 32,
-      3: 56,
-      169: 56,
-      1: 56,
-      24: 32,
-      131: 56,
-      244: 102,
-      96: 82,
-      64: 82,
-      224: 82,
-      12: 57,
-      4: 57,
-      94: 102,
-      14: 57,
-      166: 57,
-      74: 82,
-      6: 57,
-      79: 2,
-      209: 50,
-      181: 54,
-      219: 50,
-      123: 50,
-      164: 57,
-      171: 56,
-      186: 32,
-      174: 57,
-      132: 57,
-      150: 78,
-      234: 82,
-      200: 82,
-      66: 82,
-      194: 82,
-      46: 57,
-      178: 32,
-      146: 32,
-      232: 82,
-      148: 78,
-      104: 82,
-      44: 57,
-      43: 56,
-      9: 56,
-      26: 32,
-      106: 82,
-      58: 32,
-      142: 57,
-      161: 56,
-      144: 32,
-      48: 32,
-      41: 56,
-      72: 82,
-      134: 57,
-      172: 57,
-      163: 56,
-      184: 32,
-      22: 78,
-      98: 82,
-      202: 82,
-      50: 32,
-      11: 56,
-      176: 32,
-      33: 56,
-      226: 82,
-      141: 28,
-      18: 32,
-      38: 57,
-      140: 57,
-      216: 76,
-      13: 28,
-      139: 56,
-      55: 54,
-      129: 56,
-      73: 26,
-      157: 54,
-      165: 28,
-      137: 56,
-      51: 52,
-      154: 32,
-      36: 57,
-      35: 56,
-      45: 28,
-      90: 76,
-      201: 26,
-      82: 76,
-      115: 50,
-      153: 52,
-      217: 50,
-      152: 32,
-      54: 78,
-      0: 53,
+      0: 53, // No neighbors (surrounded by non-grass) -> Center piece? Looks like '0' maps to center tile
+      1: 56, // N
+      2: 53, // E
+      3: 56, // NE
+      4: 57, // S
+      5: 28, // NS
+      6: 57, // ES
+      7: 28, // NES
+      8: 53, // W
+      9: 56, // NW
+      10: 53, // EW
+      11: 56, // NEW
+      12: 57, // SW
+      13: 28, // NSW
+      14: 57, // ESW
+      15: 28, // NESW (Full border)
+      16: 32, // W (Single neighbor on the left)
+      17: 52, // NW + W
+      18: 32, // EW (Horizontal line segment)
+      19: 52, // NEW + W
+      20: 78, // SW + W
+      21: 54, // NSW + W
+      22: 78, // ESW + W
+      23: 54, // NESW + W
+      24: 32, // S + W
+      25: 52, // NS + W
+      26: 32, // ES + W
+      27: 52, // NES + W
+      28: 78, // N + W
+      29: 54, // NE + W
+      30: 78, // N + EW
+      31: 54, // N + ESW
+      32: 53, // SE
+      33: 56, // SE + N
+      34: 53, // SE + E
+      35: 56, // SE + NE
+      36: 57, // SE + S
+      37: 28, // SE + NS
+      38: 57, // SE + ES
+      39: 28, // SE + NES
+      40: 53, // SE + W
+      41: 56, // SE + NW
+      42: 53, // SE + EW
+      43: 56, // SE + NEW
+      44: 57, // SE + SW
+      45: 28, // SE + NSW
+      46: 57, // SE + ESW
+      47: 28, // SE + NESW
+      48: 32, // SE + S + W
+      49: 52, // SE + NS + W
+      50: 32, // SE + ES + W
+      51: 52, // SE + NES + W
+      52: 78, // SE + N + W
+      53: 54, // SE + NE + W
+      54: 78, // SE + N + EW
+      55: 54, // SE + N + ESW
+      56: 32, // E
+      57: 52, // NE + E
+      58: 32, // ES + E
+      59: 52, // NES + E
+      60: 78, // EW + E (Redundant E)
+      61: 54, // NEW + E
+      62: 78, // ESW + E
+      63: 54, // NESW + E
+      64: 82, // NW
+      65: 26, // NW + N
+      66: 82, // NW + E
+      67: 26, // NW + NE
+      68: 77, // NW + S
+      69: 2, // NW + NS
+      70: 77, // NW + ES
+      71: 2, // NW + NES
+      72: 82, // NW + W (Redundant W)
+      73: 26, // NW + NW (Redundant NW)
+      74: 82, // NW + EW
+      75: 26, // NW + NEW
+      76: 77, // NW + SW
+      77: 2, // NW + NSW
+      78: 77, // NW + ESW
+      79: 2, // NW + NESW
+      80: 76, // N + SE
+      81: 50, // N + SE + N (Redundant N)
+      82: 76, // N + SE + E
+      83: 50, // N + SE + NE
+      84: 102, // N + SE + S
+      85: 103, // N + SE + NS
+      86: 102, // N + SE + ES
+      88: 76, // N + SE + W
+      89: 50, // N + SE + NW
+      90: 76, // N + SE + EW
+      91: 50, // N + SE + NEW
+      92: 102, // N + SE + SW
+      94: 102, // N + SE + ESW
+      95: 103, // N + SE + NESW
+      96: 82, // W + SE
+      97: 26, // W + SE + N
+      98: 82, // W + SE + E
+      99: 26, // W + SE + NE
+      100: 77, // W + SE + S
+      101: 2, // W + SE + NS
+      102: 77, // W + SE + ES
+      103: 2, // W + SE + NES
+      104: 82, // W + SE + W (Redundant W)
+      105: 26, // W + SE + NW
+      106: 82, // W + SE + EW
+      107: 26, // W + SE + NEW
+      108: 77, // W + SE + SW
+      109: 2, // W + SE + NSW
+      110: 77, // W + SE + ESW
+      111: 2, // W + SE + NESW
+      112: 76, // S + SE
+      113: 50, // S + SE + N
+      114: 76, // S + SE + E
+      115: 50, // S + SE + NE
+      116: 102, // S + SE + S (Redundant S)
+      117: 103, // S + SE + NS
+      118: 102, // S + SE + ES
+      119: 79, // S + SE + NES
+      120: 76, // S + SE + W
+      121: 50, // S + SE + NW
+      122: 76, // S + SE + EW
+      123: 50, // S + SE + NEW
+      124: 102, // S + SE + SW
+      125: 103, // S + SE + NSW
+      126: 102, // S + SE + ESW
+      127: 79, // S + SE + NESW (All but W)
+      128: 53, // SW
+      129: 56, // SW + N
+      130: 53, // SW + E
+      131: 56, // SW + NE
+      132: 57, // SW + S
+      133: 28, // SW + NS
+      134: 57, // SW + ES
+      135: 28, // SW + NES
+      136: 53, // SW + W
+      137: 56, // SW + NW
+      138: 53, // SW + EW
+      139: 56, // SW + NEW
+      140: 57, // SW + SW (Redundant SW)
+      141: 28, // SW + NSW
+      142: 57, // SW + ESW
+      143: 28, // SW + NESW
+      144: 32, // SW + S + W
+      145: 52, // SW + NS + W
+      146: 32, // SW + ES + W
+      147: 52, // SW + NES + W
+      148: 78, // SW + N + W
+      149: 54, // SW + NE + W
+      150: 78, // SW + N + EW
+      151: 54, // SW + N + ESW
+      152: 32, // SW + E + W
+      153: 52, // SW + NE + EW
+      154: 32, // SW + ES + EW
+      155: 52, // SW + NES + EW
+      156: 78, // SW + W + W (Redundant W)
+      157: 54, // SW + NW + W
+      158: 78, // SW + EW + W
+      159: 54, // SW + NEW + W
+      160: 53, // N + SW
+      161: 56, // N + SW + N (Redundant N)
+      162: 53, // N + SW + E
+      163: 56, // N + SW + NE
+      164: 57, // N + SW + S
+      165: 28, // N + SW + NS
+      166: 57, // N + SW + ES
+      167: 28, // N + SW + NES
+      168: 53, // N + SW + W
+      169: 56, // N + SW + NW
+      170: 53, // N + SW + EW
+      171: 56, // N + SW + NEW
+      172: 57, // N + SW + SW
+      173: 28, // N + SW + NSW
+      174: 57, // N + SW + ESW
+      175: 28, // N + SW + NESW
+      176: 32, // E + SW
+      177: 52, // E + SW + N
+      178: 32, // E + SW + E (Redundant E)
+      179: 52, // E + SW + NE
+      180: 78, // E + SW + S
+      181: 54, // E + SW + NS
+      182: 78, // E + SW + ES
+      183: 54, // E + SW + NES
+      184: 32, // E + SW + W
+      185: 52, // E + SW + NW
+      186: 32, // E + SW + EW
+      187: 52, // E + SW + NEW
+      188: 78, // E + SW + SW
+      189: 54, // E + SW + NSW
+      190: 78, // E + SW + ESW
+      191: 54, // E + SW + NESW (All but W)
+      192: 82, // NE + SW
+      193: 26, // NE + SW + N
+      194: 82, // NE + SW + E
+      195: 26, // NE + SW + NE (Redundant NE)
+      196: 77, // NE + SW + S
+      197: 2, // NE + SW + NS
+      198: 77, // NE + SW + ES
+      199: 2, // NE + SW + NES
+      200: 82, // NE + SW + W
+      201: 26, // NE + SW + NW
+      202: 82, // NE + SW + EW
+      203: 26, // NE + SW + NEW
+      204: 77, // NE + SW + SW
+      205: 2, // NE + SW + NSW
+      206: 77, // NE + SW + ESW
+      207: 2, // NE + SW + NESW
+      208: 76, // S + SW
+      209: 50, // S + SW + N
+      210: 76, // S + SW + E
+      211: 50, // S + SW + NE
+      212: 102, // S + SW + S (Redundant S)
+      213: 101, // S + SW + NS
+      214: 102, // S + SW + ES
+      215: 3, // S + SW + NES
+      216: 76, // S + SW + W
+      217: 50, // S + SW + NW
+      218: 76, // S + SW + EW
+      219: 50, // S + SW + NEW
+      220: 102, // S + SW + SW (Redundant SW)
+      221: 75, // S + SW + NSW
+      222: 102, // S + SW + ESW
+      223: 29, // S + SW + NESW (All but NW)
+      224: 82, // ES + SW
+      225: 26, // ES + SW + N
+      226: 82, // ES + SW + E
+      227: 26, // ES + SW + NE
+      228: 77, // ES + SW + S
+      229: 2, // ES + SW + NS
+      230: 77, // ES + SW + ES (Redundant ES)
+      231: 2, // ES + SW + NES
+      232: 82, // ES + SW + W
+      233: 26, // ES + SW + NW
+      234: 82, // ES + SW + EW
+      235: 26, // ES + SW + NEW
+      236: 77, // ES + SW + SW
+      237: 2, // ES + SW + NSW
+      238: 77, // ES + SW + ESW
+      239: 2, // ES + SW + NESW (All but NW)
+      240: 76, // NES + SW
+      241: 50, // NES + SW + N
+      242: 76, // NES + SW + E
+      243: 50, // NES + SW + NE
+      244: 102, // NES + SW + S
+      245: 101, // NES + SW + NS
+      246: 102, // NES + SW + ES
+      247: 25, // NES + SW + NES (Redundant NES)
+      248: 76, // NES + SW + W
+      249: 50, // NES + SW + NW
+      250: 76, // NES + SW + EW
+      251: 50, // NES + SW + NEW
+      252: 102, // NES + SW + SW
+      253: 75, // NES + SW + NSW
+      254: 102, // NES + SW + ESW
+      255: 252, // All Neighbors -> Inner piece?
     };
 
     let resultIndex = tileIndexMap_8Way[mask];
@@ -1497,6 +1491,14 @@ export default class MainScene extends Phaser.Scene {
   }
 
   private addGlowEffect(tile: Phaser.Tilemaps.Tile): void {
+    // Check if a glow already exists for this tile
+    const existingGlow = this.activeGlows.find(
+      (glow) => glow.x === tile.x && glow.y === tile.y
+    );
+    if (existingGlow) {
+      return; // Don't add another glow if one exists
+    }
+
     const glowColor = 0xcd853f;
     const graphics = this.add.graphics({ x: tile.pixelX, y: tile.pixelY });
     graphics.fillStyle(glowColor, 1);
@@ -1528,41 +1530,43 @@ export default class MainScene extends Phaser.Scene {
       return;
     }
 
-    if (this.isBaseSoil(x, y)) return;
-
-    if (this.grassLayer?.getTileAt(x, y) !== null) return;
+    // Don't place borders on base soil tiles or where grass exists
+    if (this.isBaseSoil(x, y) || this.grassLayer?.getTileAt(x, y) !== null) {
+      return;
+    }
 
     const soilAbove = this.isBaseSoil(x, y - 1);
     const soilBelow = this.isBaseSoil(x, y + 1);
     const soilLeft = this.isBaseSoil(x - 1, y);
     const soilRight = this.isBaseSoil(x + 1, y);
 
-    let borderBaseIndex: number | null = null;
-    if (soilAbove && soilBelow && soilLeft && soilRight)
-      borderBaseIndex = this.SOIL_ALL;
-    else if (soilAbove && soilBelow && soilLeft)
-      borderBaseIndex = this.SOIL_UDL;
-    else if (soilAbove && soilBelow && soilRight)
-      borderBaseIndex = this.SOIL_UDR;
-    else if (soilLeft && soilRight && soilAbove)
-      borderBaseIndex = this.SOIL_LRU;
-    else if (soilLeft && soilRight && soilBelow)
-      borderBaseIndex = this.SOIL_LRD;
-    else if (soilAbove && soilBelow) borderBaseIndex = this.SOIL_UD;
-    else if (soilLeft && soilRight) borderBaseIndex = this.SOIL_LR;
-    else if (soilBelow && soilRight && !soilAbove && !soilLeft)
-      borderBaseIndex = this.SOIL_CORNER_DR;
-    else if (soilBelow && soilLeft && !soilAbove && !soilRight)
-      borderBaseIndex = this.SOIL_CORNER_DL;
-    else if (soilAbove && soilRight && !soilBelow && !soilLeft)
-      borderBaseIndex = this.SOIL_CORNER_UR;
-    else if (soilAbove && soilLeft && !soilBelow && !soilRight)
-      borderBaseIndex = this.SOIL_CORNER_UL;
-    else if (soilAbove) borderBaseIndex = this.SOIL_BORDER_DOWN;
-    else if (soilBelow) borderBaseIndex = this.SOIL_BORDER_UP;
-    else if (soilLeft) borderBaseIndex = this.SOIL_BORDER_RIGHT;
-    else if (soilRight) borderBaseIndex = this.SOIL_BORDER_LEFT;
+    // Calculate bitmask: 0=N, 1=E, 2=S, 3=W
+    let mask = 0;
+    if (soilAbove) mask |= 1;
+    if (soilRight) mask |= 2;
+    if (soilBelow) mask |= 4;
+    if (soilLeft) mask |= 8;
 
+    const borderIndexMap: { [key: number]: number | null } = {
+      0: null, // No neighbors
+      1: this.SOIL_BORDER_DOWN, // N
+      2: this.SOIL_BORDER_LEFT, // E
+      3: this.SOIL_CORNER_UR, // NE
+      4: this.SOIL_BORDER_UP, // S
+      5: this.SOIL_UD, // NS
+      6: this.SOIL_CORNER_DR, // ES
+      7: this.SOIL_UDR, // NES
+      8: this.SOIL_BORDER_RIGHT, // W
+      9: this.SOIL_CORNER_UL, // NW
+      10: this.SOIL_LR, // EW
+      11: this.SOIL_LRU, // NEW
+      12: this.SOIL_CORNER_DL, // SW
+      13: this.SOIL_UDL, // NSW
+      14: this.SOIL_LRD, // ESW
+      15: this.SOIL_ALL, // NESW
+    };
+
+    const borderBaseIndex = borderIndexMap[mask];
     const firstgid = farmTileset.firstgid;
     const currentTile = this.soilLayer.getTileAt(x, y);
     const currentBaseIndex = currentTile
@@ -1571,37 +1575,26 @@ export default class MainScene extends Phaser.Scene {
 
     if (borderBaseIndex !== null) {
       const newGlobalIndex = borderBaseIndex + firstgid;
+      // Place or update the border tile if it's not already the correct one
       if (!currentTile || currentTile.index !== newGlobalIndex) {
         const placed = this.soilLayer.putTileAt(newGlobalIndex, x, y);
         if (placed) {
+          // Copy properties from the tileset definition for the border tile
           const borderProps = (farmTileset.tileProperties as any)?.[
             borderBaseIndex
           ];
-          if (borderProps) placed.properties = { ...borderProps };
-          else placed.properties = {};
+          placed.properties = borderProps ? { ...borderProps } : {};
         }
       }
     } else {
-      const isCurrentTileABorder = [
-        this.SOIL_BORDER_UP,
-        this.SOIL_BORDER_DOWN,
-        this.SOIL_BORDER_LEFT,
-        this.SOIL_BORDER_RIGHT,
-        this.SOIL_LR,
-        this.SOIL_UD,
-        this.SOIL_LRD,
-        this.SOIL_UDL,
-        this.SOIL_LRU,
-        this.SOIL_UDR,
-        this.SOIL_ALL,
-        this.SOIL_CORNER_UL,
-        this.SOIL_CORNER_UR,
-        this.SOIL_CORNER_DL,
-        this.SOIL_CORNER_DR,
-      ].includes(currentBaseIndex);
+      // If no border should be here, check if the current tile is a border and remove it
+      const isCurrentTileABorder =
+        Object.values(borderIndexMap).includes(currentBaseIndex) &&
+        currentBaseIndex !== null;
 
       if (isCurrentTileABorder) {
         this.soilLayer.removeTileAt(x, y);
+        // Clean up any associated glow effect if the border is removed
         const glowIndex = this.activeGlows.findIndex(
           (g) => g.x === x && g.y === y
         );
@@ -1609,7 +1602,7 @@ export default class MainScene extends Phaser.Scene {
           const removedGlow = this.activeGlows.splice(glowIndex, 1)[0];
           removedGlow.tween?.stop();
           removedGlow.graphics.destroy();
-          this.updateGlowSequence();
+          this.updateGlowSequence(); // Re-run the sequence timing if a glow was removed
         }
       }
     }
