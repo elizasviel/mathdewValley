@@ -39,6 +39,15 @@ export default class MainScene extends Phaser.Scene {
   private grassLayer!: Phaser.Tilemaps.TilemapLayer; // Added for grass autotiling
   private soilLayer!: Phaser.Tilemaps.TilemapLayer; // Added for soil
 
+  // --- Plot Glows ---
+  // private plotGlows!: Phaser.GameObjects.Group; // Replaced with array
+  private activeGlows: {
+    graphics: Phaser.GameObjects.Graphics;
+    x: number;
+    y: number;
+    tween: Phaser.Tweens.Tween | null;
+  }[] = [];
+
   // Soil tile IDs
   private SOIL_BASE = 148;
   private SOIL_BORDER_UP = 123;
@@ -830,6 +839,12 @@ export default class MainScene extends Phaser.Scene {
 
     // --- Add Click Listener ---
     this.input.on("pointerdown", this.handlePointerDown, this);
+
+    // --- Empty Plot Glow Setup ---
+    // this.plotGlows = this.add.group(); // Removed group creation
+    // const glowColor = 0xcd853f; // Brighter Brown (Peru)
+    // const glowAlpha = 0.2; // Increased alpha for more prominence
+    // const glowDuration = 1500; // ms for one fade cycle (in + out)
   }
 
   update(_: number, delta: number) {
@@ -1216,6 +1231,9 @@ export default class MainScene extends Phaser.Scene {
       console.log(
         `Placing soil at player location [${playerTileX}, ${playerTileY}]`
       );
+      console.log(
+        "[handlePointerDown] canPlaceSoil returned true. Calling placeSoilTile..."
+      ); // LOG 1
       // Play Crush animation
       const actionAnimPrefix = "crush";
       const directionSuffix =
@@ -2299,14 +2317,23 @@ export default class MainScene extends Phaser.Scene {
    * and all 8 surrounding tiles on layer 0 to also be empty.
    */
   private canPlaceSoil(targetX: number, targetY: number): boolean {
-    if (!this.grassLayer) return false; // Need the grass layer (layer 0)
+    // Check if layers exist
+    if (!this.grassLayer || !this.soilLayer) return false;
 
-    // Check center tile
+    // Check center tile on grass layer
     if (this.grassLayer.getTileAt(targetX, targetY) !== null) {
       return false; // Center tile is not revealed dirt
     }
 
-    // Check 8 neighbors
+    // --- NEW: Check if BASE soil already exists on the soil layer ---
+    if (this.isBaseSoil(targetX, targetY)) {
+      console.log(
+        `[canPlaceSoil] Base soil already exists at [${targetX}, ${targetY}]. Denying placement.`
+      );
+      return false; // Soil already present
+    }
+
+    // Check 8 neighbors on grass layer
     for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) {
         if (dx === 0 && dy === 0) continue; // Skip center
@@ -2334,10 +2361,78 @@ export default class MainScene extends Phaser.Scene {
       console.error("Cannot place soil, 'Farm' tileset not found.");
       return;
     }
+    console.log(
+      `[placeSoilTile] Attempting to place tile at [${targetX}, ${targetY}]`
+    ); // LOG 2
 
     // Place the base soil tile (adjust index by firstgid)
     const baseSoilIndex = this.SOIL_BASE + farmTileset.firstgid;
-    this.soilLayer.putTileAt(baseSoilIndex, targetX, targetY);
+    const newTile = this.soilLayer.putTileAt(baseSoilIndex, targetX, targetY);
+
+    // --- Manually copy properties from tileset to the new tile instance ---
+    if (
+      newTile &&
+      farmTileset.tileProperties &&
+      (farmTileset.tileProperties as any)[this.SOIL_BASE]
+    ) {
+      // Check if tileset has properties defined and specifically for our SOIL_BASE index
+      newTile.properties = {
+        ...(farmTileset.tileProperties as any)[this.SOIL_BASE],
+      }; // Copy properties
+      console.log(
+        `[placeSoilTile] Copied properties to new tile [${targetX}, ${targetY}]:`,
+        newTile.properties
+      );
+    } else if (newTile) {
+      // Ensure properties object exists even if no properties were copied
+      if (!newTile.properties) newTile.properties = {};
+      console.log(
+        `[placeSoilTile] No specific properties found for base index ${this.SOIL_BASE} in tileset '${farmTileset.name}'. Tile properties:`,
+        newTile.properties
+      );
+    }
+    // --- End Copy Properties ---
+
+    // --- Add Glow if property exists ---
+    if (
+      newTile &&
+      newTile.properties &&
+      newTile.properties.emptyPlot === true
+    ) {
+      const glowColor = 0xcd853f; // Brighter Brown (Peru)
+      const glowAlpha = 0.2; // Increased alpha for more prominence
+
+      console.log(
+        "[placeSoilTile] Condition met: newTile.properties.emptyPlot is true. Creating glow."
+      ); // LOG 4
+      const graphics = this.add.graphics({
+        x: newTile.pixelX,
+        y: newTile.pixelY,
+      });
+      graphics.fillStyle(glowColor, 1);
+      graphics.fillRect(0, 0, newTile.width, newTile.height);
+      graphics.setAlpha(0); // Start invisible
+      // Set depth slightly above the soil layer (Layer 1)
+      graphics.setDepth(this.soilLayer.depth + 0.1);
+
+      // Add data to our tracking array, tween will be created/updated by updateGlowSequence
+      this.activeGlows.push({
+        graphics,
+        x: newTile.x,
+        y: newTile.y,
+        tween: null,
+      });
+
+      // Update the glow sequence for all active glows
+      this.updateGlowSequence();
+
+      console.log(`Added glow to placed soil at [${targetX}, ${targetY}]`);
+    } else {
+      console.log("[placeSoilTile] Glow condition NOT met. newTile:", newTile);
+      if (newTile)
+        console.log("[placeSoilTile] newTile.properties:", newTile.properties);
+    }
+    // --- End Add Glow ---
 
     // Update borders for the new tile and its neighbors
     this.updateAdjacentBorder(targetX, targetY);
@@ -2481,4 +2576,46 @@ export default class MainScene extends Phaser.Scene {
   }
 
   // --- GRASS AUTOTILING METHODS ---
+
+  // --- Helper Method for Glow Sequencing ---
+  private updateGlowSequence(): void {
+    // Constants for the glow effect
+    const glowColor = 0xcd853f; // Brighter Brown (Peru)
+    const glowAlpha = 0.2; // Increased alpha for more prominence
+    const glowDuration = 1500; // ms for one fade cycle (in + out)
+    const glowSequenceDelayFactor = 50; // ms delay per tile in sequence
+
+    // 1. Stop and remove existing tweens
+    this.activeGlows.forEach((item) => {
+      if (item.tween) {
+        item.tween.stop();
+        item.tween = null;
+      }
+      // Reset alpha to 0 in case a tween was stopped mid-fade
+      item.graphics.setAlpha(0);
+    });
+
+    // 2. Sort the glows: top-to-bottom, then left-to-right
+    this.activeGlows.sort((a, b) => {
+      if (a.y !== b.y) {
+        return a.y - b.y; // Sort by row first
+      }
+      return a.x - b.x; // Then sort by column
+    });
+
+    // 3. Create new tweens with sequential delay
+    this.activeGlows.forEach((item, index) => {
+      item.tween = this.tweens.add({
+        targets: item.graphics,
+        alpha: { from: 0, to: glowAlpha },
+        duration: glowDuration / 2,
+        delay: index * glowSequenceDelayFactor, // Delay based on sorted order
+        ease: "Sine.easeInOut",
+        yoyo: true,
+        repeat: -1,
+      });
+    });
+
+    console.log(`Updated glow sequence for ${this.activeGlows.length} tiles.`);
+  }
 } // End of MainScene class
