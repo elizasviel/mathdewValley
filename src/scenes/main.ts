@@ -1,4 +1,5 @@
 import "phaser";
+import UIScene from "./UIScene"; // Import UIScene
 
 type CarriedTileInfo = {
   x: number;
@@ -37,6 +38,9 @@ export default class MainScene extends Phaser.Scene {
 
   private grassLayer!: Phaser.Tilemaps.TilemapLayer;
   private soilLayer!: Phaser.Tilemaps.TilemapLayer;
+  private cropLayer!: Phaser.Tilemaps.TilemapLayer; // Layer for planted crops
+  private stemLayer!: Phaser.Tilemaps.TilemapLayer; // Layer for crop top parts (stems)
+  private uiScene!: UIScene; // Reference to the UI Scene
 
   private activeGlows: {
     graphics: Phaser.GameObjects.Graphics;
@@ -61,6 +65,24 @@ export default class MainScene extends Phaser.Scene {
   private readonly SOIL_CORNER_UR = 265;
   private readonly SOIL_CORNER_DL = 266;
   private readonly SOIL_CORNER_DR = 267;
+
+  // Seed/Crop related constants
+  private readonly FARM_TILESET_NAME = "Farm";
+  private readonly SEED_STAGE1_INDICES: { [key: string]: number } = {
+    carrot: 27,
+    radish: 77,
+    cabbage: 127,
+    lettuce: 177,
+    cauliflower: 227,
+    broccoli: 277,
+    garlic: 327,
+  };
+  private readonly CROP_STAGES = 4;
+  private readonly STEM_INDICES: { [key: string]: number } = {
+    carrot: 5,
+    radish: 55,
+    garlic: 305,
+  };
 
   // Offset constants for carried item positioning relative to the player
   private readonly PLAYER_CARRY_OFFSET_X = 0;
@@ -194,6 +216,10 @@ export default class MainScene extends Phaser.Scene {
     this.setupInput();
     this.setupCamera();
     this.initializeLayerReferences(tilesets);
+
+    // Launch the UI Scene and get reference
+    this.scene.launch("UIScene");
+    this.uiScene = this.scene.get("UIScene") as UIScene;
   }
 
   private loadTilesets(): Phaser.Tilemaps.Tileset[] {
@@ -209,6 +235,55 @@ export default class MainScene extends Phaser.Scene {
         console.error(`Failed to load tileset: ${mapTileset.name}`);
       }
     });
+
+    // --- Create Crop Layer ---
+    // Ensure Farm tileset is available before creating crop layer
+    const farmTileset = this.map.getTileset(this.FARM_TILESET_NAME);
+    if (!farmTileset) {
+      console.error(
+        `Tileset '${this.FARM_TILESET_NAME}' not found. Cannot create Crop Layer.`
+      );
+    } else {
+      const tilesetsForCropLayer = tilesets.includes(farmTileset)
+        ? tilesets
+        : [...tilesets, farmTileset];
+
+      const createdCropLayer = this.map.createBlankLayer(
+        "Crop Layer",
+        tilesetsForCropLayer,
+        0,
+        0
+      );
+      if (createdCropLayer) {
+        this.cropLayer = createdCropLayer;
+        this.cropLayer.setDepth(2); // Depth above soil, below player
+      } else {
+        console.error(
+          "Failed to create Crop Layer object even with valid tileset."
+        );
+        // Handle the error appropriately, maybe disable planting?
+      }
+
+      // --- Create Stem Layer ---
+      const createdStemLayer = this.map.createBlankLayer(
+        "Stem Layer",
+        tilesetsForCropLayer,
+        0,
+        0
+      );
+      if (createdStemLayer) {
+        this.stemLayer = createdStemLayer;
+        // Depth slightly above crops
+        this.stemLayer.setDepth(
+          this.cropLayer ? this.cropLayer.depth + 0.1 : 2.1
+        );
+      } else {
+        console.error("Failed to create Stem Layer object.");
+      }
+      // --- End Create Stem Layer ---
+    }
+    // --- End Create Crop Layer ---
+
     return tilesets;
   }
 
@@ -357,7 +432,7 @@ export default class MainScene extends Phaser.Scene {
       this.map.widthInPixels,
       this.map.heightInPixels
     );
-    this.cameras.main.setZoom(3);
+    this.cameras.main.setZoom(3); // Re-enable zoom
     this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
   }
 
@@ -619,6 +694,7 @@ export default class MainScene extends Phaser.Scene {
     if (playerTileX === null || playerTileY === null) return;
 
     const interactionChecks = [
+      this.tryCropInteraction,
       this.tryStumpInteraction,
       this.tryWaterInteraction,
       this.tryPickupInteraction,
@@ -631,6 +707,139 @@ export default class MainScene extends Phaser.Scene {
         return;
       }
     }
+  }
+
+  private tryCropInteraction(
+    playerTileX: number,
+    playerTileY: number
+  ): boolean {
+    if (!this.soilLayer || !this.cropLayer || !this.uiScene) return false;
+
+    const soilTile = this.soilLayer.getTileAt(playerTileX, playerTileY);
+    const cropTile = this.cropLayer.getTileAt(playerTileX, playerTileY);
+    const farmTileset = this.map.getTileset(this.FARM_TILESET_NAME);
+
+    if (!farmTileset) {
+      console.error("Farm tileset not found for crop interaction.");
+      return false;
+    }
+
+    if (cropTile) {
+      const baseIndex = cropTile.index - farmTileset.firstgid;
+      const { seedId, stage } = this.getCropInfoFromIndex(baseIndex);
+
+      if (seedId && stage) {
+        if (stage < this.CROP_STAGES) {
+          // --- Water existing crop to grow ---
+          const nextStage = stage + 1;
+          // TODO: Optionally check if watering can/fertilizer is selected?
+          const nextStageBaseIndex = baseIndex + 1;
+          const nextStageGlobalIndex =
+            nextStageBaseIndex + farmTileset.firstgid;
+
+          // Check if this next stage needs a stem
+          const needsStem =
+            nextStage === this.CROP_STAGES &&
+            this.STEM_INDICES[seedId] !== undefined;
+
+          this.performAction("watering", () => {
+            this.cropLayer.putTileAt(
+              nextStageGlobalIndex,
+              playerTileX,
+              playerTileY
+            );
+            // Optionally update soilTile.properties.stage = stage + 1; if needed
+
+            // Add or remove stem as needed
+            if (needsStem) {
+              const stemBaseIndex = this.STEM_INDICES[seedId];
+              const stemGlobalIndex = stemBaseIndex + farmTileset.firstgid;
+              this.stemLayer?.putTileAt(
+                stemGlobalIndex,
+                playerTileX,
+                playerTileY - 1
+              ); // Place stem above
+            } else {
+              // Ensure no stem is present if not needed for this stage (e.g. if logic changes later)
+              this.stemLayer?.removeTileAt(playerTileX, playerTileY - 1);
+            }
+          });
+          return true;
+        } else if (stage === this.CROP_STAGES) {
+          // --- Harvest fully grown crop ---
+          const hadStem = this.STEM_INDICES[seedId] !== undefined;
+          this.performAction("collect", () => {
+            this.cropLayer.removeTileAt(playerTileX, playerTileY);
+            // Remove stem if this crop had one
+            if (hadStem) {
+              this.stemLayer?.removeTileAt(playerTileX, playerTileY - 1);
+            }
+            console.log(
+              `Harvesting: Soil tile [${playerTileX},${playerTileY}] props BEFORE:`,
+              JSON.stringify(soilTile?.properties)
+            );
+            if (soilTile) {
+              if (!soilTile.properties) soilTile.properties = {};
+              delete soilTile.properties.crop;
+              soilTile.properties.emptyPlot = true;
+              console.log(
+                `Harvesting: Soil tile [${playerTileX},${playerTileY}] props AFTER:`,
+                JSON.stringify(soilTile.properties)
+              );
+              this.addGlowEffect(soilTile);
+              this.updateGlowSequence();
+            } else {
+              console.warn(
+                `Could not find underlying soil tile at ${playerTileX}, ${playerTileY} during harvest.`
+              );
+            }
+          });
+          return true;
+        }
+      } else {
+        console.warn(
+          `Crop tile at ${playerTileX}, ${playerTileY} has unrecognized index: ${cropTile.index}`
+        );
+      }
+      return false;
+    } else if (soilTile?.properties?.emptyPlot === true) {
+      const selectedItemId = this.uiScene.getSelectedItemId();
+
+      if (
+        selectedItemId &&
+        this.SEED_STAGE1_INDICES[selectedItemId] !== undefined
+      ) {
+        const stage1BaseIndex = this.SEED_STAGE1_INDICES[selectedItemId];
+        const stage1GlobalIndex = stage1BaseIndex + farmTileset.firstgid;
+
+        this.performAction("watering", () => {
+          console.log(
+            `Planting: Soil tile [${playerTileX},${playerTileY}] props BEFORE:`,
+            JSON.stringify(soilTile?.properties)
+          );
+          const plantedTile = this.cropLayer.putTileAt(
+            stage1GlobalIndex,
+            playerTileX,
+            playerTileY
+          );
+          if (plantedTile) {
+            // Update the underlying soil tile properties
+            soilTile.properties.crop = selectedItemId; // Store crop name
+            delete soilTile.properties.emptyPlot; // Remove emptyPlot flag
+            console.log(
+              `Planting: Soil tile [${playerTileX},${playerTileY}] props AFTER delete:`,
+              JSON.stringify(soilTile.properties)
+            );
+
+            // Remove the glow effect from this plot
+            this.removeGlowEffect(playerTileX, playerTileY);
+          }
+        });
+        return true;
+      }
+    }
+
+    return false;
   }
 
   private tryStumpInteraction(
@@ -706,6 +915,11 @@ export default class MainScene extends Phaser.Scene {
     playerTileX: number,
     playerTileY: number
   ): boolean {
+    // Prevent action if there's already a crop here
+    if (this.cropLayer?.getTileAt(playerTileX, playerTileY)) {
+      return false;
+    }
+
     if (this.grassLayer?.getTileAt(playerTileX, playerTileY)) {
       this.performAction("crush", () => {
         this.grassLayer.removeTileAt(playerTileX, playerTileY);
@@ -720,6 +934,11 @@ export default class MainScene extends Phaser.Scene {
     playerTileX: number,
     playerTileY: number
   ): boolean {
+    // Prevent action if there's already a crop here
+    if (this.cropLayer?.getTileAt(playerTileX, playerTileY)) {
+      return false;
+    }
+
     if (this.canPlaceSoil(playerTileX, playerTileY)) {
       this.performAction("crush", () =>
         this.placeSoilTile(playerTileX, playerTileY)
@@ -1189,7 +1408,7 @@ export default class MainScene extends Phaser.Scene {
       210: 76, // S + SW + E
       211: 50, // S + SW + NE
       212: 102, // S + SW + S (Redundant S)
-      213: 101, // S + SW + NS
+      213: 103, // S + SW + NS
       214: 102, // S + SW + ES
       215: 3, // S + SW + NES
       216: 76, // S + SW + W
@@ -1475,6 +1694,7 @@ export default class MainScene extends Phaser.Scene {
 
       if (newTile.properties?.emptyPlot === true) {
         this.addGlowEffect(newTile);
+        this.updateGlowSequence();
       }
     } else {
       console.error(`Failed to place soil tile at ${targetX}, ${targetY}.`);
@@ -1492,13 +1712,18 @@ export default class MainScene extends Phaser.Scene {
 
   private addGlowEffect(tile: Phaser.Tilemaps.Tile): void {
     // Check if a glow already exists for this tile
+    console.log(`addGlowEffect called for tile [${tile.x},${tile.y}]`);
     const existingGlow = this.activeGlows.find(
       (glow) => glow.x === tile.x && glow.y === tile.y
     );
     if (existingGlow) {
+      console.log(
+        `-> Glow already exists for [${tile.x},${tile.y}], returning.`
+      );
       return; // Don't add another glow if one exists
     }
 
+    console.log(`-> Adding new glow graphics for [${tile.x},${tile.y}]`);
     const glowColor = 0xcd853f;
     const graphics = this.add.graphics({ x: tile.pixelX, y: tile.pixelY });
     graphics.fillStyle(glowColor, 1);
@@ -1609,24 +1834,49 @@ export default class MainScene extends Phaser.Scene {
   }
 
   private updateGlowSequence(): void {
+    console.log("--- updateGlowSequence START ---");
     const glowAlpha = 0.2;
     const glowDuration = 1500;
     const glowSequenceDelayFactor = 50;
 
+    console.log(
+      "Existing activeGlows before filter:",
+      this.activeGlows.map((g) => `[${g.x},${g.y}]`)
+    );
+
+    // Stop all existing tweens first
     this.activeGlows.forEach((item) => {
       item.tween?.stop();
       item.tween = null;
-      item.graphics.setAlpha(0);
+      item.graphics.setAlpha(0); // Ensure graphics are initially hidden
     });
 
-    this.activeGlows.sort((a, b) => {
+    // Filter glows to only those on actual empty plots
+    const glowsToAnimate = this.activeGlows.filter((item) => {
+      const soilTile = this.soilLayer?.getTileAt(item.x, item.y);
+      const hasEmptyPlot = soilTile?.properties?.emptyPlot === true;
+      console.log(
+        `Filtering glow [${item.x},${item.y}]: hasEmptyPlot = ${hasEmptyPlot}`
+      );
+      return soilTile?.properties?.emptyPlot === true;
+    });
+
+    console.log(
+      "Glows to animate after filter:",
+      glowsToAnimate.map((g) => `[${g.x},${g.y}]`)
+    );
+
+    // Sort the valid glows for sequential animation
+    glowsToAnimate.sort((a, b) => {
       if (a.y !== b.y) {
         return a.y - b.y;
       }
       return a.x - b.x;
     });
 
-    this.activeGlows.forEach((item, index) => {
+    // Start tweens only for the filtered & sorted glows
+    glowsToAnimate.forEach((item, index) => {
+      item.graphics.setAlpha(0); // Start from alpha 0
       item.tween = this.tweens.add({
         targets: item.graphics,
         alpha: { from: 0, to: glowAlpha },
@@ -1637,5 +1887,53 @@ export default class MainScene extends Phaser.Scene {
         repeat: -1,
       });
     });
+
+    // Optional: Clean up graphics objects in activeGlows that are no longer needed (not in glowsToAnimate)
+    // This prevents memory leaks if plots are destroyed/changed in ways not covered by removeGlowEffect
+    this.activeGlows = this.activeGlows.filter((item) => {
+      const shouldKeep = glowsToAnimate.some(
+        (validGlow) => validGlow.graphics === item.graphics
+      );
+      if (!shouldKeep) {
+        item.graphics.destroy(); // Destroy unused graphics objects
+      }
+      return shouldKeep;
+    });
+
+    console.log("--- updateGlowSequence END ---");
+  }
+
+  private removeGlowEffect(tileX: number, tileY: number): void {
+    const glowIndex = this.activeGlows.findIndex(
+      (g) => g.x === tileX && g.y === tileY
+    );
+    console.log(
+      `removeGlowEffect called for tile [${tileX},${tileY}]. Found index: ${glowIndex}`
+    );
+
+    if (glowIndex > -1) {
+      const removedGlow = this.activeGlows.splice(glowIndex, 1)[0];
+      console.log(`-> Removing glow object for [${tileX},${tileY}]`);
+      removedGlow.tween?.stop();
+      removedGlow.graphics.destroy();
+      this.updateGlowSequence(); // Update sequence timing after removal
+    }
+  }
+
+  private getCropInfoFromIndex(baseIndex: number): {
+    seedId: string | null;
+    stage: number | null;
+  } {
+    for (const seedId in this.SEED_STAGE1_INDICES) {
+      const stage1Index = this.SEED_STAGE1_INDICES[seedId];
+      if (
+        baseIndex >= stage1Index &&
+        baseIndex < stage1Index + this.CROP_STAGES
+      ) {
+        const stage = baseIndex - stage1Index + 1;
+        return { seedId, stage };
+      }
+    }
+    return { seedId: null, stage: null }; // Not found
   }
 }

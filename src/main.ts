@@ -1,5 +1,6 @@
 import "phaser";
 import MainScene from "./scenes/main";
+import UIScene from "./scenes/UIScene";
 
 const config = {
   type: Phaser.AUTO,
@@ -11,12 +12,12 @@ const config = {
     height: window.innerHeight * window.devicePixelRatio,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [MainScene],
+  scene: [MainScene, UIScene],
   physics: {
     default: "arcade",
     arcade: {
       debug: false,
-      gravity: { y: 0 }, // No gravity for our shark game
+      gravity: { x: 0, y: 0 }, // Explicitly add x: 0
     },
   },
   dom: {
