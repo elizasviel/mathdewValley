@@ -18,8 +18,9 @@ export default class UIScene extends Phaser.Scene {
     { id: "garlic", name: "Garlic", frameIndex: 326 },
     { id: "fertilizer", name: "Fertilizer", frameIndex: 42 },
   ];
-  private selectedItemId: string | null = null; // State for the selected item
+  private selectedItemId: string = "carrot"; // State for the selected item
   private gridButtons: Phaser.GameObjects.Image[] = []; // Store button references
+  private sfxButtonPress!: Phaser.Sound.BaseSound; // Sound effect for button press
 
   constructor() {
     super({ key: "UIScene", active: false });
@@ -34,6 +35,8 @@ export default class UIScene extends Phaser.Scene {
       "Pixel Crawler - Free Pack/Environment/Props/Static/Farm.png",
       { frameWidth: 16, frameHeight: 16 }
     );
+    // Load the button press sound effect
+    this.load.audio("buttonpress", "Sounds/buttonpress.mp3"); // Added sound load
 
     this.load.once("filecomplete-image-ui_wood_flat", () => {});
     this.load.once("loaderror-image-ui_wood_flat", (file: any) => {
@@ -44,6 +47,9 @@ export default class UIScene extends Phaser.Scene {
   create() {
     // Get screen dimensions
     const { width: screenWidth, height: screenHeight } = this.scale;
+
+    // Initialize the sound effect
+    this.sfxButtonPress = this.sound.add("buttonpress"); // Added sound initialization
 
     // Define margin from screen edges
     const margin = 0;
@@ -129,6 +135,7 @@ export default class UIScene extends Phaser.Scene {
         button.on(Phaser.Input.Events.POINTER_DOWN, () => {
           this.selectedItemId = currentItem.id;
           console.log(`Selected: ${currentItem.name}`);
+          this.sfxButtonPress?.play(); // Play sound on click
           this.updateButtonVisuals();
           // TODO: Communicate selection back to MainScene if needed
         });

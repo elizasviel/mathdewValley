@@ -84,6 +84,16 @@ export default class MainScene extends Phaser.Scene {
     garlic: 305,
   };
 
+  private readonly HARVEST_INDICES: { [key: string]: number } = {
+    carrot: 33,
+    radish: 83,
+    cabbage: 133,
+    lettuce: 183,
+    cauliflower: 233,
+    broccoli: 283,
+    garlic: 333,
+  };
+
   // Offset constants for carried item positioning relative to the player
   private readonly PLAYER_CARRY_OFFSET_X = 0;
   private readonly PLAYER_CARRY_OFFSET_Y = -24;
@@ -98,6 +108,11 @@ export default class MainScene extends Phaser.Scene {
     "Tile Layer 4",
     "Tile Layer 5",
   ];
+
+  // Sound Effects
+  private sfxCollect!: Phaser.Sound.BaseSound;
+  private sfxCrush!: Phaser.Sound.BaseSound;
+  private sfxWater!: Phaser.Sound.BaseSound;
 
   constructor() {
     super("main");
@@ -204,6 +219,11 @@ export default class MainScene extends Phaser.Scene {
         this.load.spritesheet(key, fullPath, frameConfig);
       });
     });
+
+    // Load Sound Effects (Assuming they are in assets/sounds/)
+    this.load.audio("collect", "Sounds/collect.mp3");
+    this.load.audio("crush", "Sounds/crush.mp3");
+    this.load.audio("water", "Sounds/water.mp3");
   }
 
   create() {
@@ -216,6 +236,7 @@ export default class MainScene extends Phaser.Scene {
     this.setupInput();
     this.setupCamera();
     this.initializeLayerReferences(tilesets);
+    this.initializeSounds(); // Initialize sounds
 
     // Launch the UI Scene and get reference
     this.scene.launch("UIScene");
@@ -432,7 +453,7 @@ export default class MainScene extends Phaser.Scene {
       this.map.widthInPixels,
       this.map.heightInPixels
     );
-    this.cameras.main.setZoom(3); // Re-enable zoom
+    this.cameras.main.setZoom(5); // Re-enable zoom
     this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
   }
 
@@ -468,6 +489,12 @@ export default class MainScene extends Phaser.Scene {
         );
       }
     }
+  }
+
+  private initializeSounds(): void {
+    this.sfxCollect = this.sound.add("collect");
+    this.sfxCrush = this.sound.add("crush");
+    this.sfxWater = this.sound.add("water");
   }
 
   update(_: number, delta: number): void {
@@ -565,11 +592,14 @@ export default class MainScene extends Phaser.Scene {
     const canMoveX = !this.hasCollisionAtWorldXY(newX, this.player.y);
     const canMoveY = !this.hasCollisionAtWorldXY(this.player.x, newY);
 
-    if (canMoveX) {
+    let actuallyMoved = false;
+    if (canMoveX && moveX !== 0) {
       this.player.x = newX;
+      actuallyMoved = true;
     }
-    if (canMoveY) {
+    if (canMoveY && moveY !== 0) {
       this.player.y = newY;
+      actuallyMoved = true;
     }
   }
 
@@ -793,6 +823,53 @@ export default class MainScene extends Phaser.Scene {
                 `Could not find underlying soil tile at ${playerTileX}, ${playerTileY} during harvest.`
               );
             }
+
+            // --- Add Harvest Effect ---
+            const harvestIconBaseIndex = this.HARVEST_INDICES[seedId];
+            if (harvestIconBaseIndex !== undefined && farmTileset) {
+              // For spritesheets like 'Farm', the frame index is the base index
+              const harvestFrameIndex = harvestIconBaseIndex;
+              const worldX = this.map.tileToWorldX(playerTileX);
+              const worldY = this.map.tileToWorldY(playerTileY);
+
+              if (worldX !== null && worldY !== null) {
+                const centerX = worldX + this.map.tileWidth / 2;
+                const centerY = worldY + this.map.tileHeight / 2;
+
+                const icon = this.add.sprite(
+                  centerX,
+                  centerY,
+                  this.FARM_TILESET_NAME,
+                  harvestFrameIndex
+                );
+                icon.setDepth(this.player.depth + 2); // Above player/action effects
+
+                const text = this.add.text(centerX + 10, centerY - 5, "+1", {
+                  font: "10px monospace",
+                  color: "#ffffff",
+                  stroke: "#000000",
+                  strokeThickness: 2,
+                });
+                text.setOrigin(0, 0.5);
+                text.setDepth(icon.depth);
+
+                const duration = 1000; // ms
+                const floatHeight = 30; // pixels
+
+                this.tweens.add({
+                  targets: [icon, text],
+                  y: `-=${floatHeight}`,
+                  alpha: { from: 1, to: 0 },
+                  duration: duration,
+                  ease: "Linear",
+                  onComplete: () => {
+                    icon.destroy();
+                    text.destroy();
+                  },
+                });
+              }
+            }
+            // --- End Harvest Effect ---
           });
           return true;
         }
@@ -940,6 +1017,12 @@ export default class MainScene extends Phaser.Scene {
     }
 
     if (this.canPlaceSoil(playerTileX, playerTileY)) {
+      // ++ Add conflict check before performing action ++
+      if (this.checkSoilPlacementConflict(playerTileX, playerTileY)) {
+        return false; // Conflict detected, do not proceed or play animation
+      }
+      // -- End conflict check --
+
       this.performAction("crush", () =>
         this.placeSoilTile(playerTileX, playerTileY)
       );
@@ -956,6 +1039,20 @@ export default class MainScene extends Phaser.Scene {
 
     this.isPerformingAction = true;
 
+    // Play corresponding sound effect
+    switch (actionAnimPrefix) {
+      case "collect":
+        this.sfxCollect?.play();
+        break;
+      case "crush":
+        this.sfxCrush?.play();
+        break;
+      case "watering":
+        this.sfxWater?.play();
+        break;
+      // Add cases for other actions if needed
+    }
+
     const directionSuffix =
       this.currentDir === "up" || this.currentDir === "down"
         ? this.currentDir
@@ -967,9 +1064,14 @@ export default class MainScene extends Phaser.Scene {
 
     this.player.anims.play(actionAnimKey, true);
 
+    // Execute the action logic immediately
     if (onComplete) {
       onComplete();
     }
+
+    // Reset isPerformingAction when the animation *actually* completes
+    // The existing listener handles this:
+    // this.player.on(Phaser.Animations.Events.ANIMATION_COMPLETE, ...)
   }
 
   private pickupTwoPartItem(
@@ -1701,6 +1803,11 @@ export default class MainScene extends Phaser.Scene {
       return;
     }
 
+    // --- REMOVE Conflict Check and Rollback Logic ---
+    // [Rollback logic previously here is now removed]
+    // --- End REMOVED Conflict Check ---
+
+    // If no conflicts (checked earlier), proceed to update borders
     this.updateAdjacentSoilBorder(targetX, targetY);
     this.updateAdjacentSoilBorder(targetX, targetY - 1);
     this.updateAdjacentSoilBorder(targetX, targetY + 1);
@@ -1800,8 +1907,18 @@ export default class MainScene extends Phaser.Scene {
 
     if (borderBaseIndex !== null) {
       const newGlobalIndex = borderBaseIndex + firstgid;
+
+      // Check if the current tile is a pickup item part
+      const isPickupItemPart =
+        currentTile?.properties?.canPickup1_2 === true ||
+        currentTile?.properties?.canPickup2_2 === true;
+
       // Place or update the border tile if it's not already the correct one
-      if (!currentTile || currentTile.index !== newGlobalIndex) {
+      // AND the current tile is not a pickup item part
+      if (
+        !isPickupItemPart &&
+        (!currentTile || currentTile.index !== newGlobalIndex)
+      ) {
         const placed = this.soilLayer.putTileAt(newGlobalIndex, x, y);
         if (placed) {
           // Copy properties from the tileset definition for the border tile
@@ -1935,5 +2052,119 @@ export default class MainScene extends Phaser.Scene {
       }
     }
     return { seedId: null, stage: null }; // Not found
+  }
+
+  // ++ NEW HELPER FUNCTION ++
+  private calculateSoilBorderIndex(
+    x: number,
+    y: number,
+    hypotheticalSoilX?: number, // Optional: X coord of a tile to *treat* as base soil
+    hypotheticalSoilY?: number // Optional: Y coord of a tile to *treat* as base soil
+  ): number | null {
+    const farmTileset = this.map.getTileset("Farm");
+    if (!this.soilLayer || !farmTileset) return null;
+
+    if (
+      x < 0 ||
+      y < 0 ||
+      x >= this.soilLayer.width ||
+      y >= this.soilLayer.height
+    ) {
+      return null;
+    }
+
+    // Helper to check for base soil, considering the hypothetical placement
+    const checkIsBaseSoil = (checkX: number, checkY: number): boolean => {
+      if (checkX === hypotheticalSoilX && checkY === hypotheticalSoilY) {
+        return true; // Treat the hypothetical position as base soil
+      }
+      return this.isBaseSoil(checkX, checkY); // Otherwise, check the actual tile
+    };
+
+    // Borders are not placed on base soil tiles or where grass exists
+    if (checkIsBaseSoil(x, y) || this.grassLayer?.getTileAt(x, y) !== null) {
+      return null;
+    }
+
+    const soilAbove = checkIsBaseSoil(x, y - 1);
+    const soilBelow = checkIsBaseSoil(x, y + 1);
+    const soilLeft = checkIsBaseSoil(x - 1, y);
+    const soilRight = checkIsBaseSoil(x + 1, y);
+
+    let mask = 0;
+    if (soilAbove) mask |= 1; // N
+    if (soilRight) mask |= 2; // E
+    if (soilBelow) mask |= 4; // S
+    if (soilLeft) mask |= 8; // W
+
+    const borderIndexMap: { [key: number]: number | null } = {
+      0: null, // No neighbors
+      1: this.SOIL_BORDER_DOWN, // N
+      2: this.SOIL_BORDER_LEFT, // E
+      3: this.SOIL_CORNER_UR, // NE
+      4: this.SOIL_BORDER_UP, // S
+      5: this.SOIL_UD, // NS
+      6: this.SOIL_CORNER_DR, // ES
+      7: this.SOIL_UDR, // NES
+      8: this.SOIL_BORDER_RIGHT, // W
+      9: this.SOIL_CORNER_UL, // NW
+      10: this.SOIL_LR, // EW
+      11: this.SOIL_LRU, // NEW
+      12: this.SOIL_CORNER_DL, // SW
+      13: this.SOIL_UDL, // NSW
+      14: this.SOIL_LRD, // ESW
+      15: this.SOIL_ALL, // NESW
+    };
+
+    return borderIndexMap[mask]; // Return the base index or null
+  }
+  // -- END NEW HELPER FUNCTION --
+
+  // ++ NEW FUNCTION: Check for conflicts before placing soil ++
+  private checkSoilPlacementConflict(
+    targetX: number,
+    targetY: number
+  ): boolean {
+    if (!this.soilLayer) return false; // Should not happen if canPlaceSoil passed
+
+    const neighbors = [
+      { x: targetX, y: targetY - 1 }, // Above
+      { x: targetX, y: targetY + 1 }, // Below
+      { x: targetX - 1, y: targetY }, // Left
+      { x: targetX + 1, y: targetY }, // Right
+    ];
+
+    for (const neighbor of neighbors) {
+      const neighborTile = this.soilLayer.getTileAt(neighbor.x, neighbor.y);
+      const isPickupItemPart =
+        neighborTile?.properties?.canPickup1_2 === true ||
+        neighborTile?.properties?.canPickup2_2 === true;
+
+      if (isPickupItemPart) {
+        // Check if placing soil at targetX, targetY would cause a border
+        // to be placed on this pickup item neighbor.
+        const wouldPlaceBorderIndex = this.calculateSoilBorderIndex(
+          neighbor.x,
+          neighbor.y,
+          targetX, // Pass the hypothetical soil location
+          targetY
+        );
+
+        if (wouldPlaceBorderIndex !== null) {
+          console.warn(
+            `Soil placement at [${targetX}, ${targetY}] prevented. Would overwrite pickup item part at [${neighbor.x}, ${neighbor.y}] with a border.`
+          );
+          return true; // Conflict found
+        }
+      }
+    }
+
+    return false; // No conflicts found
+  }
+  // -- END NEW FUNCTION --
+
+  // Add cleanup for sounds if the scene is destroyed (good practice)
+  shutdown() {
+    this.sound.stopAll(); // Stop all sounds associated with this scene
   }
 }
