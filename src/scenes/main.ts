@@ -41,6 +41,7 @@ export default class MainScene extends Phaser.Scene {
   private cropLayer!: Phaser.Tilemaps.TilemapLayer; // Layer for planted crops
   private stemLayer!: Phaser.Tilemaps.TilemapLayer; // Layer for crop top parts (stems)
   private uiScene!: UIScene; // Reference to the UI Scene
+  private gemGroup!: Phaser.GameObjects.Group; // ++ Add group for gems ++
 
   private activeGlows: {
     graphics: Phaser.GameObjects.Graphics;
@@ -68,6 +69,7 @@ export default class MainScene extends Phaser.Scene {
 
   // Seed/Crop related constants
   private readonly FARM_TILESET_NAME = "Farm";
+  private readonly LOOT_TILESET_NAME = "Loot";
   private readonly SEED_STAGE1_INDICES: { [key: string]: number } = {
     carrot: 27,
     radish: 77,
@@ -113,6 +115,13 @@ export default class MainScene extends Phaser.Scene {
   private sfxCollect!: Phaser.Sound.BaseSound;
   private sfxCrush!: Phaser.Sound.BaseSound;
   private sfxWater!: Phaser.Sound.BaseSound;
+  private sfxHit!: Phaser.Sound.BaseSound; // ++ Add hit sound reference ++
+  private sfxSwing!: Phaser.Sound.BaseSound; // ++ Add swing sound reference ++
+
+  // ++ Add Loot Animation Base Indices ++
+  private readonly LOOT_ANIM_BASE_INDICES = [1330, 1387, 1444, 1501];
+  private readonly LOOT_ANIM_FRAMES = 6;
+  // -- End Add Loot Animation Base Indices --
 
   constructor() {
     super("main");
@@ -163,6 +172,11 @@ export default class MainScene extends Phaser.Scene {
     this.load.spritesheet(
       "Farm",
       "Pixel Crawler - Free Pack/Environment/Props/Static/Farm.png",
+      { frameWidth: 16, frameHeight: 16 }
+    );
+    this.load.spritesheet(
+      "Loot",
+      "Pixel Crawler - Free Pack/Environment/Props/Static/Loot.png",
       { frameWidth: 16, frameHeight: 16 }
     );
     this.load.spritesheet(
@@ -224,6 +238,8 @@ export default class MainScene extends Phaser.Scene {
     this.load.audio("collect", "Sounds/collect.mp3");
     this.load.audio("crush", "Sounds/crush.mp3");
     this.load.audio("water", "Sounds/water.mp3");
+    this.load.audio("hit", "Sounds/hit.mp3"); // ++ Add hit sound ++
+    this.load.audio("swing", "Sounds/swing.mp3"); // ++ Add swing sound ++
   }
 
   create() {
@@ -232,11 +248,13 @@ export default class MainScene extends Phaser.Scene {
     const tilesets = this.loadTilesets();
     this.createLayers(tilesets);
     this.initializePlayer();
-    this.createAnimations();
+    this.createAnimations(); // Animations created here
     this.setupInput();
     this.setupCamera();
     this.initializeLayerReferences(tilesets);
     this.initializeSounds(); // Initialize sounds
+    this.gemGroup = this.add.group(); // ++ Initialize the group ++
+    this.animateLootTiles(); // ++ Call the new method here ++
 
     // Launch the UI Scene and get reference
     this.scene.launch("UIScene");
@@ -419,6 +437,32 @@ export default class MainScene extends Phaser.Scene {
       });
     });
 
+    // ++ Add Loot Animations ++
+    const lootTileset = this.map.getTileset(this.LOOT_TILESET_NAME);
+    if (lootTileset) {
+      this.LOOT_ANIM_BASE_INDICES.forEach((baseIndex) => {
+        const animKey = `loot_anim_${baseIndex}`;
+        // Frame numbers are relative to the spritesheet
+        const startFrame = baseIndex;
+        const endFrame = baseIndex + this.LOOT_ANIM_FRAMES - 1;
+
+        this.anims.create({
+          key: animKey,
+          frames: this.anims.generateFrameNumbers(this.LOOT_TILESET_NAME, {
+            start: startFrame,
+            end: endFrame,
+          }),
+          frameRate: this.baseFrameRate / 1.5, // Adjust framerate as needed
+          repeat: -1, // Loop indefinitely
+        });
+      });
+    } else {
+      console.warn(
+        `Tileset '${this.LOOT_TILESET_NAME}' not found. Cannot create loot animations.`
+      );
+    }
+    // -- End Add Loot Animations --
+
     this.player.on(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
       this.isPerformingAction = false;
       const currentAnim = this.player.anims.currentAnim;
@@ -495,6 +539,8 @@ export default class MainScene extends Phaser.Scene {
     this.sfxCollect = this.sound.add("collect");
     this.sfxCrush = this.sound.add("crush");
     this.sfxWater = this.sound.add("water");
+    this.sfxHit = this.sound.add("hit"); // ++ Initialize hit sound ++
+    this.sfxSwing = this.sound.add("swing"); // ++ Initialize swing sound ++
   }
 
   update(_: number, delta: number): void {
@@ -592,14 +638,11 @@ export default class MainScene extends Phaser.Scene {
     const canMoveX = !this.hasCollisionAtWorldXY(newX, this.player.y);
     const canMoveY = !this.hasCollisionAtWorldXY(this.player.x, newY);
 
-    let actuallyMoved = false;
     if (canMoveX && moveX !== 0) {
       this.player.x = newX;
-      actuallyMoved = true;
     }
     if (canMoveY && moveY !== 0) {
       this.player.y = newY;
-      actuallyMoved = true;
     }
   }
 
@@ -712,7 +755,7 @@ export default class MainScene extends Phaser.Scene {
     return false;
   }
 
-  private handlePointerDown() {
+  private handlePointerDown(pointer: Phaser.Input.Pointer): void {
     if (this.isPerformingAction) return;
 
     if (this.isCarrying) {
@@ -724,19 +767,24 @@ export default class MainScene extends Phaser.Scene {
     if (playerTileX === null || playerTileY === null) return;
 
     const interactionChecks = [
+      this.tryGemPickupInteraction,
       this.tryCropInteraction,
-      this.tryStumpInteraction,
+      this.tryStumpInteraction, // Now handles both hit and miss
       this.tryWaterInteraction,
       this.tryPickupInteraction,
       this.tryGrassRemovalInteraction,
       this.trySoilPlacementInteraction,
     ];
 
+    // Keep the original loop structure
     for (const checkInteraction of interactionChecks) {
       if (checkInteraction.call(this, playerTileX, playerTileY)) {
-        return;
+        return; // If an interaction (hit or miss on stump) returns true, we stop.
       }
     }
+
+    // Removed the specific 'if (!interactionSucceeded)' block here
+    // as the swing/miss logic is now inside tryStumpInteraction
   }
 
   private tryCropInteraction(
@@ -929,9 +977,17 @@ export default class MainScene extends Phaser.Scene {
       "stump"
     );
     if (adjacentStump) {
-      this.performAction("slice", () => this.cutTree(adjacentStump));
-      return true;
+      // ++ Check if the stump is already cut ++
+      if (adjacentStump.properties?.cut === true) {
+        // Stump is already cut, play 'swing' sound and slice animation
+        this.performAction("slice", undefined, "swing");
+      } else {
+        // Stump is not cut, play 'hit' sound and slice animation, then cut the tree
+        this.performAction("slice", () => this.cutTree(adjacentStump), "hit");
+      }
+      return true; // Indicate successful interaction (even if it was a swing on a cut stump)
     }
+    // Return false if no stump found
     return false;
   }
 
@@ -1033,31 +1089,52 @@ export default class MainScene extends Phaser.Scene {
 
   private performAction(
     actionAnimPrefix: string,
-    onComplete?: () => void
+    onComplete?: () => void,
+    soundKeyOverride?: "hit" | "swing" | "collect" | "crush" | "watering" // Use more specific sound keys
   ): void {
     if (this.isPerformingAction) return;
 
     this.isPerformingAction = true;
 
-    // Play corresponding sound effect
-    switch (actionAnimPrefix) {
+    let soundToPlay: Phaser.Sound.BaseSound | undefined | null = undefined;
+
+    // Determine sound based on override or prefix
+    const soundKey = soundKeyOverride || actionAnimPrefix; // Use override if provided
+
+    switch (soundKey) {
       case "collect":
-        this.sfxCollect?.play();
+        soundToPlay = this.sfxCollect;
         break;
       case "crush":
-        this.sfxCrush?.play();
+        soundToPlay = this.sfxCrush;
         break;
       case "watering":
-        this.sfxWater?.play();
+        soundToPlay = this.sfxWater;
+        break;
+      case "hit": // New sound for successful slice/chop
+        soundToPlay = this.sfxHit;
+        break;
+      case "swing": // New sound for slice/chop miss
+        soundToPlay = this.sfxSwing;
+        break;
+      case "slice": // Default sound for slice if no override
+        // Default to hit if slice is called without override (e.g., if other interactions use 'slice')
+        // Update: Defaulting to swing might make more sense if 'slice' is used generically elsewhere
+        soundToPlay = this.sfxSwing;
         break;
       // Add cases for other actions if needed
     }
+
+    soundToPlay?.play(); // Play the determined sound
 
     const directionSuffix =
       this.currentDir === "up" || this.currentDir === "down"
         ? this.currentDir
         : "side";
-    const actionAnimKey = `${actionAnimPrefix}_${directionSuffix}`;
+    // Ensure the 'slice' animation is used for both 'hit' and 'swing' sounds if triggered by stump/miss logic
+    const animPrefixToUse =
+      soundKey === "hit" || soundKey === "swing" ? "slice" : actionAnimPrefix;
+    const actionAnimKey = `${animPrefixToUse}_${directionSuffix}`;
     const flipX = this.currentDir === "left";
 
     this.player.setFlipX(flipX);
@@ -2166,5 +2243,260 @@ export default class MainScene extends Phaser.Scene {
   // Add cleanup for sounds if the scene is destroyed (good practice)
   shutdown() {
     this.sound.stopAll(); // Stop all sounds associated with this scene
+  }
+
+  // ++ NEW METHOD: Animate Loot Tiles ++
+  private animateLootTiles(): void {
+    const lootTileset = this.map.getTileset(this.LOOT_TILESET_NAME);
+    if (!lootTileset) {
+      console.warn(
+        `Tileset '${this.LOOT_TILESET_NAME}' not found. Cannot animate loot tiles.`
+      );
+      return;
+    }
+
+    const lootBaseGids = this.LOOT_ANIM_BASE_INDICES.map(
+      (index) => lootTileset.firstgid + index
+    );
+
+    this.map.layers.forEach((layerData) => {
+      const layer = layerData.tilemapLayer;
+      if (!layer) return; // Skip if it's not a tile layer
+
+      // Use filterTiles then iterate to avoid issues with removing while iterating
+      const tilesToAnimate = layer.filterTiles((tile: Phaser.Tilemaps.Tile) =>
+        lootBaseGids.includes(tile.index)
+      );
+
+      tilesToAnimate.forEach((tile: Phaser.Tilemaps.Tile) => {
+        const tileX = tile.x;
+        const tileY = tile.y;
+        const pixelX = tile.pixelX;
+        const pixelY = tile.pixelY;
+        const baseIndex = tile.index - lootTileset.firstgid; // Get the base index relative to the tileset
+        const animKey = `loot_anim_${baseIndex}`;
+        const layerDepth = layer.depth; // ++ Get the layer depth ++
+
+        // Remove the static tile
+        layer.removeTileAt(tileX, tileY);
+
+        // Create the animated sprite
+        const sprite = this.add.sprite(
+          pixelX + tile.width / 2, // Center the sprite
+          pixelY + tile.height / 2,
+          this.LOOT_TILESET_NAME // Use the tileset name as the texture key
+        );
+
+        sprite.setDepth(layerDepth); // Use original depth for sprite
+        sprite.setData("baseIndex", baseIndex); // Store base index
+        sprite.setData("tileX", tileX); // Store tileX
+        sprite.setData("tileY", tileY); // Store tileY
+        sprite.setData("layerDepth", layerDepth); // ++ Store layer depth ++
+        this.gemGroup.add(sprite); // Add to group
+
+        // Play the corresponding animation
+        // Check if animation exists before playing
+        if (this.anims.exists(animKey)) {
+          sprite.play(animKey, true); // true for looping
+        } else {
+          console.warn(
+            `Animation key '${animKey}' not found for loot tile at [${tileX}, ${tileY}].`
+          );
+          sprite.destroy(); // Destroy the sprite if animation doesn't exist
+          this.gemGroup.remove(sprite, true, true); // Remove from group if destroy fails
+        }
+      });
+    });
+  }
+  // -- END NEW METHOD --
+
+  // ++ NEW METHOD: Create Floating Effect ++
+  private createFloatingEffect(
+    x: number,
+    y: number,
+    textureKey: string,
+    frameIndex: number
+  ): void {
+    const icon = this.add.sprite(x, y, textureKey, frameIndex);
+    icon.setDepth(this.player.depth + 2); // Above player/action effects
+
+    const text = this.add.text(x + 10, y - 5, "+1", {
+      font: "10px monospace",
+      color: "#ffffff",
+      stroke: "#000000",
+      strokeThickness: 2,
+    });
+    text.setOrigin(0, 0.5);
+    text.setDepth(icon.depth);
+
+    const duration = 1000; // ms
+    const floatHeight = 30; // pixels
+
+    this.tweens.add({
+      targets: [icon, text],
+      y: `-=${floatHeight}`,
+      alpha: { from: 1, to: 0 },
+      duration: duration,
+      ease: "Linear",
+      onComplete: () => {
+        icon.destroy();
+        text.destroy();
+      },
+    });
+  }
+  // -- END NEW METHOD --
+
+  // ++ NEW METHOD: Pickup Gem ++
+  private pickupGem(gemSprite: Phaser.GameObjects.Sprite): void {
+    if (this.isPerformingAction) return; // Don't pick up if already doing something
+
+    const baseIndex = gemSprite.getData("baseIndex");
+    const gemX = gemSprite.x;
+    const gemY = gemSprite.y;
+
+    // Check if baseIndex is valid before proceeding
+    if (typeof baseIndex !== "number") {
+      console.error(
+        "Could not pick up gem: Invalid baseIndex data.",
+        gemSprite
+      );
+      return;
+    }
+
+    this.performAction("collect"); // Play animation and sound
+
+    // Create the floating +1 and icon effect immediately
+    this.createFloatingEffect(gemX, gemY, this.LOOT_TILESET_NAME, baseIndex);
+
+    // Remove the gem sprite from the scene and group
+    this.gemGroup.remove(gemSprite, true, true); // (removeFromScene = true, destroyChild = true)
+
+    // TODO: Update inventory/UI later
+    console.log(`Picked up gem with base index: ${baseIndex}`);
+  }
+  // -- END NEW METHOD --
+
+  // ++ NEW INTERACTION CHECK: Try Picking Up Gem ++
+  private tryGemPickupInteraction(
+    playerTileX: number,
+    playerTileY: number
+  ): boolean {
+    let foundGem: Phaser.GameObjects.Sprite | null = null;
+    let gemTileX: number | null = null;
+    let gemTileY: number | null = null;
+    let gemOriginalDepth: number | null = null;
+
+    // Iterate through gems to find one at the player's location
+    this.gemGroup.getChildren().forEach((gem) => {
+      const sprite = gem as Phaser.GameObjects.Sprite;
+      const currentGemTileX = sprite.getData("tileX");
+      const currentGemTileY = sprite.getData("tileY");
+
+      if (currentGemTileX === playerTileX && currentGemTileY === playerTileY) {
+        foundGem = sprite;
+        gemTileX = currentGemTileX; // Store coords for obstruction check
+        gemTileY = currentGemTileY;
+        gemOriginalDepth = sprite.getData("layerDepth"); // Get stored depth
+      }
+    });
+
+    if (
+      foundGem &&
+      gemTileX !== null &&
+      gemTileY !== null &&
+      gemOriginalDepth !== null
+    ) {
+      // ++ Check for obstructing tiles ++
+      let isObstructed = false;
+      // --- START MODIFICATION ---
+      // Only check the grass layer (Tile Layer 0) for obstruction
+      if (this.grassLayer) {
+        const obstructingTile = this.grassLayer.getTileAt(gemTileX, gemTileY);
+        if (obstructingTile) {
+          isObstructed = true;
+          // Optional: Log obstruction by grass
+          // console.log(`Gem at [${gemTileX}, ${gemTileY}] obstructed by grass on layer '${this.grassLayer.layer.name}'`);
+        }
+      }
+      // --- END MODIFICATION ---
+      // -- End obstruction check --
+
+      // Only pickup if not obstructed
+      if (!isObstructed) {
+        this.pickupGem(foundGem); // Call the existing pickup logic
+        return true; // Interaction handled
+      } else {
+        // console.log(`Cannot pick up gem at [${gemTileX}, ${gemTileY}], it is obstructed.`);
+        return false; // Interaction blocked by obstruction
+      }
+    }
+
+    return false; // No gem found at player's location or data missing
+  }
+  // -- END NEW INTERACTION CHECK --
+
+  private getFacingTileCoords(
+    baseX: number,
+    baseY: number
+  ): { x: number; y: number } | null {
+    switch (this.currentDir) {
+      case "up":
+        return { x: baseX, y: baseY - 1 };
+      case "down":
+        return { x: baseX, y: baseY + 1 };
+      case "left":
+        return { x: baseX - 1, y: baseY };
+      case "right":
+        return { x: baseX + 1, y: baseY };
+      default:
+        return null;
+    }
+  }
+
+  private canSwingAt(tileX: number, tileY: number): boolean {
+    // Prevent swinging outside map bounds
+    if (
+      !this.map ||
+      tileX < 0 ||
+      tileY < 0 ||
+      tileX >= this.map.width ||
+      tileY >= this.map.height
+    ) {
+      return false;
+    }
+
+    // Check if the tile itself is a stump (should be handled by tryStumpInteraction)
+    // or other non-swingable interactables if needed
+    // const isStump = this.findTileWithPropertyAt(tileX, tileY, 'stump');
+    // if (isStump) return false;
+
+    const worldX = this.map.tileToWorldX(tileX);
+    const worldY = this.map.tileToWorldY(tileY);
+
+    // Check if conversion resulted in null
+    if (worldX === null || worldY === null) {
+      return false;
+    }
+
+    // Check for collision in the center of the target tile
+    const checkWorldX = worldX + this.map.tileWidth / 2;
+    const checkWorldY = worldY + this.map.tileHeight / 2;
+
+    // Check collision layers *except* the ones holding the items we *want* to hit (like trees/stumps if they were separate)
+    // For simplicity, we just check all defined collision layers. If a tile is marked collision=true, can't swing through it.
+    for (const layerName of this.COLLISION_CHECK_LAYERS) {
+      const layer = this.map.getLayer(layerName)?.tilemapLayer;
+      if (layer?.visible) {
+        const tile = layer.getTileAt(tileX, tileY);
+        // Prevent swinging *at* a tile marked with collision=true
+        if (tile?.properties?.collision === true) {
+          // Add exceptions here if needed, e.g., allow swinging at destructible walls
+          return false;
+        }
+      }
+    }
+
+    // If no collision found on relevant layers, allow swinging
+    return true;
   }
 }
