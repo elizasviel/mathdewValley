@@ -864,6 +864,18 @@ export default class MainScene extends Phaser.Scene {
                 `Harvesting: Soil tile [${playerTileX},${playerTileY}] props AFTER:`,
                 JSON.stringify(soilTile.properties)
               );
+
+              // --- Increment Inventory Count ---
+              if (this.uiScene && seedId) {
+                this.uiScene.incrementItemCount(seedId);
+                console.log(`Incremented inventory for harvested ${seedId}`);
+              } else {
+                console.warn(
+                  `Could not increment inventory for ${seedId}. UIScene or seedId missing.`
+                );
+              }
+              // --- End Increment Inventory Count ---
+
               this.addGlowEffect(soilTile);
               this.updateGlowSequence();
             } else {
@@ -2368,11 +2380,35 @@ export default class MainScene extends Phaser.Scene {
     // Create the floating +1 and icon effect immediately
     this.createFloatingEffect(gemX, gemY, this.LOOT_TILESET_NAME, baseIndex);
 
+    // Determine gem type from baseIndex
+    let gemItemId: string | null = null;
+    switch (baseIndex) {
+      case 1330:
+        gemItemId = "gem_blue";
+        break;
+      case 1387:
+        gemItemId = "gem_purple";
+        break;
+      case 1444:
+        gemItemId = "gem_green";
+        break;
+      case 1501:
+        gemItemId = "gem_red";
+        break;
+      default:
+        console.warn(`Picked up gem with unknown base index: ${baseIndex}`);
+    }
+
     // Remove the gem sprite from the scene and group
     this.gemGroup.remove(gemSprite, true, true); // (removeFromScene = true, destroyChild = true)
 
-    // TODO: Update inventory/UI later
-    console.log(`Picked up gem with base index: ${baseIndex}`);
+    // Increment the count in the UI Scene if a valid gem type was found
+    if (gemItemId && this.uiScene) {
+      this.uiScene.incrementItemCount(gemItemId);
+      console.log(`Picked up ${gemItemId}.`);
+    } else if (!this.uiScene) {
+      console.warn("UIScene not available to update gem count.");
+    }
   }
   // -- END NEW METHOD --
 
@@ -2432,71 +2468,5 @@ export default class MainScene extends Phaser.Scene {
     }
 
     return false; // No gem found at player's location or data missing
-  }
-  // -- END NEW INTERACTION CHECK --
-
-  private getFacingTileCoords(
-    baseX: number,
-    baseY: number
-  ): { x: number; y: number } | null {
-    switch (this.currentDir) {
-      case "up":
-        return { x: baseX, y: baseY - 1 };
-      case "down":
-        return { x: baseX, y: baseY + 1 };
-      case "left":
-        return { x: baseX - 1, y: baseY };
-      case "right":
-        return { x: baseX + 1, y: baseY };
-      default:
-        return null;
-    }
-  }
-
-  private canSwingAt(tileX: number, tileY: number): boolean {
-    // Prevent swinging outside map bounds
-    if (
-      !this.map ||
-      tileX < 0 ||
-      tileY < 0 ||
-      tileX >= this.map.width ||
-      tileY >= this.map.height
-    ) {
-      return false;
-    }
-
-    // Check if the tile itself is a stump (should be handled by tryStumpInteraction)
-    // or other non-swingable interactables if needed
-    // const isStump = this.findTileWithPropertyAt(tileX, tileY, 'stump');
-    // if (isStump) return false;
-
-    const worldX = this.map.tileToWorldX(tileX);
-    const worldY = this.map.tileToWorldY(tileY);
-
-    // Check if conversion resulted in null
-    if (worldX === null || worldY === null) {
-      return false;
-    }
-
-    // Check for collision in the center of the target tile
-    const checkWorldX = worldX + this.map.tileWidth / 2;
-    const checkWorldY = worldY + this.map.tileHeight / 2;
-
-    // Check collision layers *except* the ones holding the items we *want* to hit (like trees/stumps if they were separate)
-    // For simplicity, we just check all defined collision layers. If a tile is marked collision=true, can't swing through it.
-    for (const layerName of this.COLLISION_CHECK_LAYERS) {
-      const layer = this.map.getLayer(layerName)?.tilemapLayer;
-      if (layer?.visible) {
-        const tile = layer.getTileAt(tileX, tileY);
-        // Prevent swinging *at* a tile marked with collision=true
-        if (tile?.properties?.collision === true) {
-          // Add exceptions here if needed, e.g., allow swinging at destructible walls
-          return false;
-        }
-      }
-    }
-
-    // If no collision found on relevant layers, allow swinging
-    return true;
   }
 }
