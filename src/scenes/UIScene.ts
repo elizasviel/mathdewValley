@@ -30,14 +30,14 @@ export default class UIScene extends Phaser.Scene {
     { id: "gem_purple", name: "Purple Gem", frameIndex: 1387, count: 0 },
     { id: "gem_green", name: "Green Gem", frameIndex: 1444, count: 0 },
     { id: "gem_red", name: "Red Gem", frameIndex: 1501, count: 0 },
-    // Harvested Crops (Using Stage 4 index as icon)
-    { id: "carrot", name: "Carrot", frameIndex: 30, count: 0 },
-    { id: "radish", name: "Radish", frameIndex: 80, count: 0 },
-    { id: "cabbage", name: "Cabbage", frameIndex: 130, count: 0 },
-    { id: "lettuce", name: "Lettuce", frameIndex: 180, count: 0 },
-    { id: "cauliflower", name: "Cauliflower", frameIndex: 230, count: 0 },
-    { id: "broccoli", name: "Broccoli", frameIndex: 280, count: 0 },
-    { id: "garlic", name: "Garlic", frameIndex: 330, count: 0 },
+    // Harvested Crops (Using Harvest floating effect index as icon)
+    { id: "carrot", name: "Carrot", frameIndex: 33, count: 0 },
+    { id: "radish", name: "Radish", frameIndex: 83, count: 0 },
+    { id: "cabbage", name: "Cabbage", frameIndex: 133, count: 0 },
+    { id: "lettuce", name: "Lettuce", frameIndex: 183, count: 0 },
+    { id: "cauliflower", name: "Cauliflower", frameIndex: 233, count: 0 },
+    { id: "broccoli", name: "Broccoli", frameIndex: 283, count: 0 },
+    { id: "garlic", name: "Garlic", frameIndex: 333, count: 0 },
     // Add more general items if needed up to 12
     // Example: { id: "hoe", name: "Hoe", frameIndex: someIndex },
   ];
