@@ -867,7 +867,8 @@ export default class MainScene extends Phaser.Scene {
 
               // --- Increment Inventory Count ---
               if (this.uiScene && seedId) {
-                this.uiScene.incrementItemCount(seedId);
+                // Pass true for isHarvest to use the correct item ID and metadata
+                this.uiScene.incrementItemCount(seedId, 1, true);
                 console.log(`Incremented inventory for harvested ${seedId}`);
               } else {
                 console.warn(
@@ -944,6 +945,7 @@ export default class MainScene extends Phaser.Scene {
 
       if (
         selectedItemId &&
+        this.uiScene.getItemCount(selectedItemId) > 0 && // Check count
         this.SEED_STAGE1_INDICES[selectedItemId] !== undefined
       ) {
         const stage1BaseIndex = this.SEED_STAGE1_INDICES[selectedItemId];
@@ -960,6 +962,9 @@ export default class MainScene extends Phaser.Scene {
             playerTileY
           );
           if (plantedTile) {
+            // Decrement seed count
+            this.uiScene.decrementItemCount(selectedItemId);
+
             // Update the underlying soil tile properties
             soilTile.properties.crop = selectedItemId; // Store crop name
             delete soilTile.properties.emptyPlot; // Remove emptyPlot flag

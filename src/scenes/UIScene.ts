@@ -5,55 +5,91 @@ interface SelectableItem {
   id: string;
   name: string;
   frameIndex: number; // Frame index from the Farm spritesheet
-  count?: number; // Optional: For stackable items like gems
+  count: number; // Make count mandatory now for easier logic
 }
+
+// Metadata for all potential items
+interface ItemMetadata {
+  name: string;
+  frameIndex: number;
+  isSeed: boolean; // Distinguish between seed and general items
+}
+
+const ALL_ITEM_METADATA: { [key: string]: ItemMetadata } = {
+  // Seeds
+  carrot: { name: "Carrot", frameIndex: 26, isSeed: true },
+  radish: { name: "Radish", frameIndex: 76, isSeed: true },
+  cabbage: { name: "Cabbage", frameIndex: 126, isSeed: true },
+  lettuce: { name: "Lettuce", frameIndex: 176, isSeed: true },
+  cauliflower: { name: "Cauliflower", frameIndex: 226, isSeed: true },
+  broccoli: { name: "Broccoli", frameIndex: 276, isSeed: true },
+  garlic: { name: "Garlic", frameIndex: 326, isSeed: true },
+  // General Items
+  fertilizer: { name: "Fertilizer", frameIndex: 42, isSeed: false },
+  gem_blue: { name: "Blue Gem", frameIndex: 1330, isSeed: false },
+  gem_purple: { name: "Purple Gem", frameIndex: 1387, isSeed: false },
+  gem_green: { name: "Green Gem", frameIndex: 1444, isSeed: false },
+  gem_red: { name: "Red Gem", frameIndex: 1501, isSeed: false },
+  // Harvested Crops (Using different IDs if needed, or handle contextually)
+  // For simplicity, using same ID but frameIndex is different
+  harvested_carrot: { name: "Carrot", frameIndex: 33, isSeed: false },
+  harvested_radish: { name: "Radish", frameIndex: 83, isSeed: false },
+  harvested_cabbage: { name: "Cabbage", frameIndex: 133, isSeed: false },
+  harvested_lettuce: { name: "Lettuce", frameIndex: 183, isSeed: false },
+  harvested_cauliflower: {
+    name: "Cauliflower",
+    frameIndex: 233,
+    isSeed: false,
+  },
+  harvested_broccoli: { name: "Broccoli", frameIndex: 283, isSeed: false },
+  harvested_garlic: { name: "Garlic", frameIndex: 333, isSeed: false },
+};
 
 // Define the character set for the retro fonts - Escaped single quotes
 const FONT_CHARS =
-  '  1234567890AaBbCcDdEeFfGgHhIiJjKkLlMmNnñÑOoPpQqRrSsTtUuVvWwXxYyZz¡!¿?@/$&~Çç\\‘\\\'"".,;:/\\[]()}{-_=+\\*^%°X✓'; // Note: Escaped single quotes
+  "  1234567890AaBbCcDdEeFfGgHhIiJjKkLlMmNnñÑOoPpQqRrSsTtUuVvWwXxYyZz¡!¿?@/$&~Çç\\'\\'\\\"\\\".,;:/\\[]()}{-_=+\\*^%°X✓"; // Attempt 2: Escaping quotes
 
 export default class UIScene extends Phaser.Scene {
-  // Rename 'items' to 'seedItems' and add 'generalItems'
+  // Start with some initial items if desired
   private seedItems: SelectableItem[] = [
-    { id: "carrot", name: "Carrot", frameIndex: 26 },
-    { id: "radish", name: "Radish", frameIndex: 76 },
-    { id: "cabbage", name: "Cabbage", frameIndex: 126 },
-    { id: "lettuce", name: "Lettuce", frameIndex: 176 },
-    { id: "cauliflower", name: "Cauliflower", frameIndex: 226 },
-    { id: "broccoli", name: "Broccoli", frameIndex: 276 },
-    { id: "garlic", name: "Garlic", frameIndex: 326 },
-    // Add more seeds if needed up to 12
+    { id: "carrot", name: "Carrot", frameIndex: 26, count: 5 },
+    { id: "radish", name: "Radish", frameIndex: 76, count: 5 },
+    { id: "cabbage", name: "Cabbage", frameIndex: 126, count: 5 },
+    { id: "lettuce", name: "Lettuce", frameIndex: 176, count: 5 },
+    { id: "cauliflower", name: "Cauliflower", frameIndex: 226, count: 5 },
+    { id: "broccoli", name: "Broccoli", frameIndex: 276, count: 5 },
+    { id: "garlic", name: "Garlic", frameIndex: 326, count: 5 },
   ];
-  private generalItems: SelectableItem[] = [
-    { id: "fertilizer", name: "Fertilizer", frameIndex: 42 }, // Not countable for now
-    { id: "gem_blue", name: "Blue Gem", frameIndex: 1330, count: 0 },
-    { id: "gem_purple", name: "Purple Gem", frameIndex: 1387, count: 0 },
-    { id: "gem_green", name: "Green Gem", frameIndex: 1444, count: 0 },
-    { id: "gem_red", name: "Red Gem", frameIndex: 1501, count: 0 },
-    // Harvested Crops (Using Harvest floating effect index as icon)
-    { id: "carrot", name: "Carrot", frameIndex: 33, count: 0 },
-    { id: "radish", name: "Radish", frameIndex: 83, count: 0 },
-    { id: "cabbage", name: "Cabbage", frameIndex: 133, count: 0 },
-    { id: "lettuce", name: "Lettuce", frameIndex: 183, count: 0 },
-    { id: "cauliflower", name: "Cauliflower", frameIndex: 233, count: 0 },
-    { id: "broccoli", name: "Broccoli", frameIndex: 283, count: 0 },
-    { id: "garlic", name: "Garlic", frameIndex: 333, count: 0 },
-    // Add more general items if needed up to 12
-    // Example: { id: "hoe", name: "Hoe", frameIndex: someIndex },
-  ];
-  private selectedItemId: string | null = null; // Allow null initially
+  // Start general items empty
+  private generalItems: SelectableItem[] = [];
+  private selectedItemId: string | null = null;
   private gridButtons: Phaser.GameObjects.Image[] = [];
   private gridIcons: Phaser.GameObjects.Image[] = []; // Array to store icon references
   private gridCounts: Phaser.GameObjects.Text[] = []; // Array to store count text objects
   private sfxButtonPress!: Phaser.Sound.BaseSound;
+
+  // Scroll related state and objects
+  private scrollbar!: Phaser.GameObjects.Image;
+  private scrollbarbutton!: Phaser.GameObjects.Image;
+  private scrollOffset: number = 0; // Starting item index offset
+  private readonly totalSlots = 48; // Total potential slots
+  private readonly visibleSlots = 12; // 4 rows * 3 cols
+  private readonly maxScrollOffset = this.totalSlots - this.visibleSlots; // Max starting index
+  private scrollbarTopY!: number;
+  private scrollbarBottomY!: number;
+  private scrollbarButtonRange!: number;
+
+  // Debugging: Visualize hitbox
+  private scrollbarHitboxViz!: Phaser.GameObjects.Graphics;
+
+  // Invisible draggable area
+  private scrollbarDraggableArea!: Phaser.GameObjects.Rectangle;
 
   // Tab related state and objects
   private activeTab: "SEEDS" | "ITEMS" = "SEEDS";
   private seedsTab!: Phaser.GameObjects.DynamicBitmapText;
   private itemsTab!: Phaser.GameObjects.DynamicBitmapText;
 
-  // Grid properties (moved here for easier access in updateGridContent)
-  private readonly gridRows = 4; // Updated to 4 rows
   private readonly gridCols = 3; // Updated to 3 columns
   private readonly buttonSpacing = 90;
   private panelX!: number; // Will be set in create
@@ -136,12 +172,6 @@ export default class UIScene extends Phaser.Scene {
     this.uiPanel.setOrigin(0.71, 1);
     this.uiPanel.setScale(2.1, 3);
 
-    // Define button properties
-    const buttonTexture = "ui_wood_flat";
-    const buttonCropRect = { x: 161, y: 193, width: 48, height: 48 };
-    const buttonScale = 2.5;
-    const buttonOrigin = { x: 0.5, y: 0.5 };
-    // Define a hit area for tabs (can reuse or define new one)
     const tabHitAreaRect = new Phaser.Geom.Rectangle(0, 0, 100, 50); // Adjust size as needed
     const tabHitAreaCallback = Phaser.Geom.Rectangle.Contains;
 
@@ -219,11 +249,88 @@ export default class UIScene extends Phaser.Scene {
     const scrollbarX = this.panelX - 282;
     const scrollbarY = this.panelY - 618;
 
-    const scrollbar = this.add.image(scrollbarX, scrollbarY, "ui_wood_flat");
-    scrollbar.setCrop(210, 255, 24, 128);
-    scrollbar.setScale(2.5, 3);
-    scrollbar.setOrigin(0.5, 0.5);
-    scrollbar.setDepth(100);
+    this.scrollbar = this.add.image(scrollbarX, scrollbarY, "ui_wood_flat");
+    this.scrollbar.setCrop(210, 255, 24, 128);
+    this.scrollbar.setScale(2.5, 3);
+    this.scrollbar.setOrigin(0.5, 0.5);
+    this.scrollbar.setDepth(100);
+
+    // Define scrollbar button bounds AFTER scrollbar is created
+    this.scrollbarTopY = this.scrollbar.y + 195; // Your top value
+    this.scrollbarBottomY = this.scrollbar.y + 505; // Your bottom value
+    this.scrollbarButtonRange = this.scrollbarBottomY - this.scrollbarTopY;
+
+    this.scrollbarbutton = this.add.image(
+      this.scrollbar.x,
+      this.scrollbarTopY, // both adjusts the green zone
+      "ui_wood_flat"
+    );
+    this.scrollbarbutton.setCrop(210, 192, 24, 34);
+    this.scrollbarbutton.setScale(2.5, 2);
+    this.scrollbarbutton.setDepth(101);
+
+    const buttonVisualWidth = 24 * 2.5; // cropWidth * scaleX = 60
+    const buttonVisualHeight = 28 * 2; // cropHeight * scaleY = 56
+
+    // --- Create Invisible Draggable Area ---
+    this.scrollbarDraggableArea = this.add.rectangle(
+      this.scrollbarbutton.x + 260,
+      this.scrollbarbutton.y + 30, // both adjusts the green zone
+      buttonVisualWidth - 30,
+      buttonVisualHeight - 10
+      // 0x00ff00, // Green fill
+      //0.3 // Semi-transparent
+    );
+
+    // Keep it visible for debugging
+    this.scrollbarDraggableArea.setDepth(this.scrollbarbutton.depth + 2); // Ensure it's on top for input
+    this.scrollbarDraggableArea.setInteractive();
+    this.input.setDraggable(this.scrollbarDraggableArea);
+    // --- End Invisible Draggable Area ---
+
+    // Drag handler for the scrollbar button
+    this.input.on(
+      Phaser.Input.Events.DRAG,
+      (
+        pointer: Phaser.Input.Pointer,
+        gameObject: Phaser.GameObjects.Rectangle, // Now dragging the rectangle
+        dragX: number,
+        dragY: number
+      ) => {
+        console.log("Dragging");
+        // Ensure we are dragging the correct invisible rectangle
+        if (gameObject !== this.scrollbarDraggableArea) return;
+
+        // Clamp Y position within bounds
+        const newY = Phaser.Math.Clamp(
+          dragY,
+          this.scrollbarTopY + 30,
+          this.scrollbarBottomY + 30
+        );
+        gameObject.y = newY; // Update the invisible rectangle's Y
+
+        // Sync the visual button and hitbox visualization to the invisible rectangle
+        this.scrollbarbutton.y = newY - 30;
+
+        // Calculate scroll percentage and offset
+        const scrollPercentage =
+          (newY - this.scrollbarTopY - 30) / this.scrollbarButtonRange;
+        // Calculate target offset (item index based)
+        // Multiply by gridCols to scroll full rows at a time
+        const targetOffset =
+          Math.round(
+            scrollPercentage * (this.maxScrollOffset / this.gridCols)
+          ) * this.gridCols;
+
+        if (targetOffset !== this.scrollOffset) {
+          this.scrollOffset = targetOffset;
+          // Update grid content based on new offset
+          const currentItems =
+            this.activeTab === "SEEDS" ? this.seedItems : this.generalItems;
+          this.updateGridContent(currentItems);
+        }
+      }
+    );
 
     // --- Create Tabs ---
     const tabY = this.panelY - 440; // Y position for tabs
@@ -264,6 +371,8 @@ export default class UIScene extends Phaser.Scene {
         this.activeTab = "SEEDS";
         console.log("Switched to Seeds tab");
         this.sfxButtonPress?.play();
+        this.scrollOffset = 0; // Reset scroll on tab switch
+        this.updateScrollbarButtonPosition(); // Update button visual
         this.updateTabVisuals();
         this.updateGridContent(this.seedItems); // Update grid with seeds
         // Deselect item when switching tabs
@@ -309,6 +418,8 @@ export default class UIScene extends Phaser.Scene {
         this.activeTab = "ITEMS";
         console.log("Switched to Items tab");
         this.sfxButtonPress?.play();
+        this.scrollOffset = 0; // Reset scroll on tab switch
+        this.updateScrollbarButtonPosition(); // Update button visual
         this.updateTabVisuals();
         this.updateGridContent(this.generalItems); // Update grid with items
         // Deselect item when switching tabs
@@ -327,10 +438,15 @@ export default class UIScene extends Phaser.Scene {
 
     // --- Initial Grid Population ---
     this.updateGridContent(this.seedItems); // Show seeds initially
+    this.updateScrollbarButtonPosition(); // Set initial scrollbar position
   }
 
   // --- Method to update the grid content ---
   private updateGridContent(itemsToShow: SelectableItem[]) {
+    // Determine items to show based on scroll offset
+    const startIndex = this.scrollOffset;
+    const endIndex = startIndex + this.visibleSlots; // Exclusive end index
+
     // 1. Clear existing buttons, icons, counts AND placeholders
     this.gridPlaceholders.forEach((placeholder) => placeholder.destroy());
     this.gridButtons.forEach((button) => button.destroy());
@@ -369,17 +485,14 @@ export default class UIScene extends Phaser.Scene {
     const startY = this.panelY - this.uiPanel.displayHeight + 725;
 
     // 3. Populate grid - Create placeholders first, then items on top
-    let itemIndex = 0;
-    const totalSlots = this.gridRows * this.gridCols;
-
-    for (let i = 0; i < totalSlots; i++) {
-      const row = Math.floor(i / this.gridCols);
-      const col = i % this.gridCols;
+    for (let slotIndex = 0; slotIndex < this.visibleSlots; slotIndex++) {
+      const row = Math.floor(slotIndex / this.gridCols);
+      const col = slotIndex % this.gridCols;
 
       const slotX = startX + col * this.buttonSpacing;
       const slotY = startY + row * this.buttonSpacing;
 
-      // --- Create Placeholder for EVERY slot ---
+      // --- Create Placeholder for EVERY visible slot ---
       const placeholder = this.add.image(slotX, slotY, placeholderTexture);
       placeholder.setCrop(
         placeholderCropRect.x,
@@ -393,8 +506,11 @@ export default class UIScene extends Phaser.Scene {
       placeholder.setDepth(0); // Base layer
       this.gridPlaceholders.push(placeholder);
 
-      // --- If item exists, add Button, Icon, and Count Text ---
-      if (itemIndex < itemsToShow.length) {
+      // --- Calculate the actual item index based on scroll offset ---
+      const itemIndex = startIndex + slotIndex;
+
+      // --- If item exists AT THIS INDEX in the data, add Button, Icon, and Count Text ---
+      if (itemIndex >= 0 && itemIndex < itemsToShow.length) {
         const currentItem = itemsToShow[itemIndex];
 
         // Add interactive Button (on top of placeholder)
@@ -479,8 +595,6 @@ export default class UIScene extends Phaser.Scene {
         // placeholder.setVisible(false); // Or placeholder.destroy();
         // For simplicity, we'll just let the button cover the tinted placeholder.
       }
-
-      itemIndex++; // Increment index regardless of item presence
     }
 
     // 4. Update visual state of newly created buttons
@@ -551,38 +665,185 @@ export default class UIScene extends Phaser.Scene {
   }
 
   // --- Public method to increment item count ---
-  public incrementItemCount(itemId: string, amount: number = 1): void {
-    const itemIndex = this.generalItems.findIndex((item) => item.id === itemId);
+  public incrementItemCount(
+    itemId: string,
+    amount: number = 1,
+    isHarvest: boolean = false // Flag to handle harvested crops
+  ): void {
+    if (amount <= 0) return;
 
-    if (itemIndex !== -1 && this.generalItems[itemIndex].count !== undefined) {
-      this.generalItems[itemIndex].count! += amount;
+    // Use harvested ID if applicable
+    const actualItemId = isHarvest ? `harvested_${itemId}` : itemId;
+
+    const metadata = ALL_ITEM_METADATA[actualItemId];
+    if (!metadata) {
+      console.warn(`Cannot increment: Unknown item ID ${actualItemId}`);
+      return;
+    }
+
+    let targetArray = metadata.isSeed ? this.seedItems : this.generalItems;
+    const itemIndex = targetArray.findIndex((item) => item.id === actualItemId);
+    let needsGridUpdate = false;
+
+    if (itemIndex !== -1) {
+      // Item exists, just increment count
+      targetArray[itemIndex].count += amount;
       console.log(
-        `Incremented ${itemId}. New count: ${this.generalItems[itemIndex].count}`
+        `Incremented ${actualItemId}. New count: ${targetArray[itemIndex].count}`
       );
+    } else {
+      // Item doesn't exist, add it if metadata found
+      const newItem: SelectableItem = {
+        id: actualItemId,
+        name: metadata.name,
+        frameIndex: metadata.frameIndex,
+        count: amount,
+      };
+      targetArray.push(newItem);
+      needsGridUpdate = true; // Grid structure changed
+      console.log(`Added ${actualItemId} with count: ${amount}`);
+    }
 
-      // Update the corresponding text object if the "ITEMS" tab is active
-      if (this.activeTab === "ITEMS") {
-        // Find the text object associated with this item ID
+    // Update visuals if the relevant tab is active
+    const isActiveTab =
+      (this.activeTab === "SEEDS" && metadata.isSeed) ||
+      (this.activeTab === "ITEMS" && !metadata.isSeed);
+
+    if (isActiveTab) {
+      if (needsGridUpdate) {
+        this.updateGridContent(targetArray);
+        this.updateScrollbarButtonPosition(); // Update scrollbar if items removed/added
+      } else {
+        // Only update the text if grid structure didn't change
         const countText = this.gridCounts.find(
-          (text) => text.getData("itemId") === itemId
+          (text) => text.getData("itemId") === actualItemId
         );
-
-        if (countText) {
-          countText.setText(this.generalItems[itemIndex].count!.toString());
-          console.log(`Updated text for ${itemId}`);
-        } else {
-          console.warn(
-            `Could not find count text for ${itemId} to update. It might be because the ITEMS tab is not currently visible, or the item wasn't rendered correctly.`
-          );
-          // Optionally, force a grid refresh if the tab isn't active,
-          // although the count will update when the tab is next opened.
-          // if (this.activeTab !== 'ITEMS') {
-          //   this.updateGridContent(this.generalItems);
-          // }
+        if (countText && itemIndex !== -1) {
+          // Ensure itemIndex is valid
+          countText.setText(targetArray[itemIndex].count.toString());
+          console.log(`Updated text for ${actualItemId}`);
         }
       }
+    }
+  }
+
+  // --- Public method to decrement item count ---
+  public decrementItemCount(itemId: string, amount: number = 1): boolean {
+    if (amount <= 0) return false;
+
+    const metadata = ALL_ITEM_METADATA[itemId];
+    if (!metadata) {
+      console.warn(`Cannot decrement: Unknown item ID ${itemId}`);
+      return false;
+    }
+
+    let targetArray = metadata.isSeed ? this.seedItems : this.generalItems;
+    const itemIndex = targetArray.findIndex((item) => item.id === itemId);
+    let needsGridUpdate = false;
+
+    if (itemIndex === -1) {
+      console.warn(
+        `Cannot decrement ${itemId}. Item not found in the inventory.`
+      );
+      return false; // Item not found
+    }
+
+    // Check if there's enough to decrement
+    if (targetArray[itemIndex].count >= amount) {
+      targetArray[itemIndex].count -= amount;
+      console.log(
+        `Decremented ${itemId}. New count: ${targetArray[itemIndex].count}`
+      );
+
+      // Check if item count reached zero
+      if (targetArray[itemIndex].count === 0) {
+        targetArray.splice(itemIndex, 1); // Remove the item
+        needsGridUpdate = true; // Grid structure changed
+        console.log(`Removed ${itemId} from inventory (count reached 0).`);
+
+        // If the removed item was selected, deselect it
+        if (this.selectedItemId === itemId) {
+          this.selectedItemId = null;
+          // Visuals updated below by updateGridContent or updateButtonVisuals
+        }
+      }
+
+      // Update visuals if the relevant tab is active
+      const isActiveTab =
+        (this.activeTab === "SEEDS" && metadata.isSeed) ||
+        (this.activeTab === "ITEMS" && !metadata.isSeed);
+
+      if (isActiveTab) {
+        if (needsGridUpdate) {
+          this.updateGridContent(targetArray);
+          this.updateScrollbarButtonPosition(); // Update scrollbar if items removed/added
+        } else {
+          // Only update the text if grid structure didn't change
+          const countText = this.gridCounts.find(
+            (text) => text.getData("itemId") === itemId
+          );
+          // Use findIndex again or retrieve count before potential splice
+          const currentItem = targetArray.find((item) => item.id === itemId);
+          if (countText && currentItem) {
+            countText.setText(currentItem.count.toString());
+            console.log(`Updated text for ${itemId}`);
+          } else if (countText && !currentItem) {
+            // This case should ideally not happen if needsGridUpdate is false,
+            // but handles potential edge cases where text exists but item was removed elsewhere.
+            countText.destroy(); // Remove orphaned text
+            const icon = this.gridIcons.find(
+              (icon) => icon.getData("itemId") === itemId
+            );
+            const button = this.gridButtons.find(
+              (btn) => btn.getData("itemId") === itemId
+            );
+            icon?.destroy();
+            button?.destroy(); // Maybe just disable/tint the button?
+          }
+        }
+      }
+      // Ensure button visuals are correct even if grid not fully updated
+      if (this.selectedItemId === null) {
+        this.updateButtonVisuals();
+      }
+
+      return true; // Decrement successful
     } else {
-      console.warn(`Item ${itemId} not found or is not countable.`);
+      console.log(
+        `Cannot decrement ${itemId}. Only ${targetArray[itemIndex].count} left.`
+      );
+      return false; // Not enough items
+    }
+  }
+
+  // --- Public method to get item count ---
+  public getItemCount(itemId: string): number {
+    const metadata = ALL_ITEM_METADATA[itemId];
+    if (!metadata) return 0;
+
+    let targetArray = metadata.isSeed ? this.seedItems : this.generalItems;
+    const item = targetArray.find((item) => item.id === itemId);
+
+    return item ? item.count : 0;
+  }
+
+  // --- Helper to update scrollbar button position based on scrollOffset ---
+  private updateScrollbarButtonPosition(): void {
+    if (!this.scrollbarbutton || this.maxScrollOffset <= 0) return; // No button or nothing to scroll
+
+    const scrollPercentage = this.scrollOffset / this.maxScrollOffset;
+    const newY =
+      this.scrollbarTopY + scrollPercentage * this.scrollbarButtonRange;
+
+    this.scrollbarbutton.y = Phaser.Math.Clamp(
+      newY,
+      this.scrollbarTopY,
+      this.scrollbarBottomY
+    );
+
+    // Update hitbox visualization position
+    if (this.scrollbarHitboxViz) {
+      this.scrollbarHitboxViz.y = this.scrollbarbutton.y;
     }
   }
 }
