@@ -20,6 +20,7 @@ const config = {
       gravity: { x: 0, y: 0 }, // Explicitly add x: 0
     },
   },
+  pixelArt: true,
   dom: {
     createContainer: true,
   },

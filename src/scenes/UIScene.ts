@@ -95,6 +95,7 @@ export default class UIScene extends Phaser.Scene {
   private panelX!: number; // Will be set in create
   private panelY!: number; // Will be set in create
   private uiPanel!: Phaser.GameObjects.Image; // To calculate start positions
+  private equipmentPanel!: Phaser.GameObjects.Image;
   private gridPlaceholders: Phaser.GameObjects.Image[] = []; // Add this array
 
   constructor() {
@@ -439,6 +440,29 @@ export default class UIScene extends Phaser.Scene {
     // --- Initial Grid Population ---
     this.updateGridContent(this.seedItems); // Show seeds initially
     this.updateScrollbarButtonPosition(); // Set initial scrollbar position
+
+    // --- Create Equipment Panel ---
+
+    const equipmentPanelY = this.uiPanel.y - 618;
+    this.equipmentPanel = this.add.image(
+      this.panelX,
+      equipmentPanelY + 150,
+      "ui_wood_flat"
+    );
+    this.equipmentPanel.setCrop(0, 225, 160, 160); // Same as the inventory panel
+    this.equipmentPanel.setOrigin(0.71, 1); // Align bottom-right relative to its position
+    this.equipmentPanel.setScale(2.1, 2); // Adjust scale if needed
+    const equipmentText = this.add.dynamicBitmapText(
+      this.panelX - 290,
+      equipmentPanelY - 120,
+      "font_a",
+      "EQUIPMENT",
+      tabFontSize
+    );
+    equipmentText.setLetterSpacing(tabLetterSpacing);
+    equipmentText.setOrigin(0, 0.5);
+    equipmentText.setDepth(102);
+    equipmentText.setDisplayCallback(adjustLSpacing);
   }
 
   // --- Method to update the grid content ---
