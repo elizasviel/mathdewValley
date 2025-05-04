@@ -293,9 +293,9 @@ export default class UIScene extends Phaser.Scene {
     this.input.on(
       Phaser.Input.Events.DRAG,
       (
-        pointer: Phaser.Input.Pointer,
+        _: Phaser.Input.Pointer,
         gameObject: Phaser.GameObjects.Rectangle, // Now dragging the rectangle
-        dragX: number,
+        __: number,
         dragY: number
       ) => {
         console.log("Dragging");
@@ -469,7 +469,6 @@ export default class UIScene extends Phaser.Scene {
   private updateGridContent(itemsToShow: SelectableItem[]) {
     // Determine items to show based on scroll offset
     const startIndex = this.scrollOffset;
-    const endIndex = startIndex + this.visibleSlots; // Exclusive end index
 
     // 1. Clear existing buttons, icons, counts AND placeholders
     this.gridPlaceholders.forEach((placeholder) => placeholder.destroy());

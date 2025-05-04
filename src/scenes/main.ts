@@ -755,7 +755,7 @@ export default class MainScene extends Phaser.Scene {
     return false;
   }
 
-  private handlePointerDown(pointer: Phaser.Input.Pointer): void {
+  private handlePointerDown(_: Phaser.Input.Pointer): void {
     if (this.isPerformingAction) return;
 
     if (this.isCarrying) {
